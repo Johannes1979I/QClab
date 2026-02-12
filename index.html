@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registro CQI — Laboratorio Analisi</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'><rect x='2' y='2' width='32' height='32' rx='8' fill='%231a5276'/><text x='18' y='24' text-anchor='middle' fill='white' font-size='18'>🔬</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Source+Serif+4:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="app-header">
+  <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="2" y="2" width="36" height="36" rx="10" stroke="white" stroke-width="2" fill="none"/>
+    <circle cx="20" cy="16" r="6" stroke="white" stroke-width="1.5" fill="none"/>
+    <path d="M14 28 L20 22 L26 28" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <line x1="20" y1="22" x2="20" y2="34" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <circle cx="12" cy="10" r="2" fill="white" opacity=".5"/>
+    <circle cx="28" cy="10" r="2" fill="white" opacity=".5"/>
+  </svg>
+  <div>
+    <h1>Registro CQI — Controllo Qualità Interno</h1>
+    <div class="subtitle">Calibrazioni e Controlli Qualità — Laboratorio Analisi</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Month Selector -->
+  <div class="month-selector">
+    <button onclick="prevMonth()">◀</button>
+    <div id="month-display"></div>
+    <button onclick="nextMonth()">▶</button>
+  </div>
+
+  <!-- TABS -->
+  <div class="section-tabs">
+    <button class="section-tab active" onclick="showSection('dashboard')">① Dashboard</button>
+    <button class="section-tab" onclick="showSection('data')">② Inserimento CQ</button>
+    <button class="section-tab" onclick="showSection('charts')">③ Grafici L-J</button>
+    <button class="section-tab" onclick="showSection('pdf')">④ Report PDF</button>
+    <button class="section-tab" onclick="showSection('settings')">⑤ Impostazioni</button>
+  </div>
+
+  <!-- ═══════════ DASHBOARD ═══════════ -->
+  <div id="section-dashboard" class="fade-in">
+    <div class="machine-grid" id="machine-cards"></div>
+    <div style="text-align:center;margin-top:14px">
+      <button class="btn btn-primary" onclick="showBatchModal()">🎲 Generazione Batch CQ</button>
+    </div>
+  </div>
+
+  <!-- ═══════════ DATA ENTRY ═══════════ -->
+  <div id="section-data" class="hidden">
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:var(--primary-pale);color:var(--primary)">🧪</div>
+        <h2>Inserimento Controllo Qualità</h2>
+      </div>
+      <div class="card-body" id="data-grid-container"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ CHARTS ═══════════ -->
+  <div id="section-charts" class="hidden">
+    <div id="charts-container"></div>
+  </div>
+
+  <!-- ═══════════ PDF ═══════════ -->
+  <div id="section-pdf" class="hidden">
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:var(--accent-pale);color:var(--accent)">📄</div>
+        <h2>Genera Report CQI Mensile</h2>
+      </div>
+      <div class="card-body">
+        <div id="pdf-preview-info"></div>
+        <div class="grid-2" style="margin-bottom:14px">
+          <div class="form-group"><label>Nome Laboratorio</label>
+            <input type="text" id="lab-name" value="Laboratorio Analisi — P.O. Giovanni Paolo I"></div>
+          <div class="form-group"><label>Note aggiuntive</label>
+            <textarea id="pdf-notes-qc" rows="2" placeholder="Note..."></textarea></div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px">
+          <label>Logo Intestazione</label>
+          <div class="upload-zone" onclick="document.getElementById('logo-file').click()">
+            <img id="header-preview" class="hidden" alt="Logo">
+            <div id="upload-placeholder">📷 Clicca per caricare il logo</div>
+            <input type="file" id="logo-file" accept="image/*" style="display:none" onchange="handleLogoUpload(event)">
+          </div>
+          <button class="btn btn-sm btn-outline" id="btn-remove-header" style="display:none;margin-top:5px" onclick="removeLogo()">Rimuovi</button>
+        </div>
+        <div id="lib-status" style="margin-bottom:14px"></div>
+        <button class="btn btn-primary" onclick="generatePDF()">📄 Genera e Scarica PDF</button>
+        <div style="margin-top:20px"><h3 style="font-size:14px;color:var(--primary);margin-bottom:8px">📁 Report Archiviati</h3><div id="archive-list"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ SETTINGS ═══════════ -->
+  <div id="section-settings" class="hidden">
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:var(--accent-pale);color:var(--accent)">⚙️</div>
+        <h2>Analizzatori</h2>
+      </div>
+      <div class="card-body">
+        <div class="btn-group" style="margin-bottom:14px">
+          <button class="btn btn-primary" onclick="showAddMachineModal()">➕ Aggiungi Analizzatore</button>
+          <button class="btn btn-outline" onclick="resetMachines()">🔄 Ripristina predefiniti</button>
+        </div>
+        <div id="machine-settings-list"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:var(--primary-pale);color:var(--primary)">🧬</div>
+        <h2>Test & Livelli CQ</h2>
+      </div>
+      <div class="card-body" id="test-manager"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:var(--warning-pale);color:var(--warning)">💾</div>
+        <h2>Gestione Dati</h2>
+      </div>
+      <div class="card-body">
+        <div class="btn-group">
+          <button class="btn btn-outline" onclick="exportData()">📤 Esporta (JSON)</button>
+          <button class="btn btn-outline" onclick="document.getElementById('import-file').click()">📥 Importa</button>
+          <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
+          <button class="btn btn-danger-outline" onclick="clearAllData()">🗑️ Cancella dati CQ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ MODAL: Add/Edit Machine ═══════════ -->
+<div id="machine-modal" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:500px">
+    <h3 id="machine-modal-title" style="margin-bottom:14px;color:var(--primary)">➕ Nuovo Analizzatore</h3>
+    <input type="hidden" id="mm-edit-idx" value="-1">
+    <div class="grid-2" style="margin-bottom:10px">
+      <div class="form-group"><label>Nome</label><input type="text" id="mm-name" placeholder="es. Cell-Dyne Ruby"></div>
+      <div class="form-group"><label>Tipo / Settore</label><input type="text" id="mm-type" placeholder="es. Ematologia"></div>
+    </div>
+    <div class="grid-3" style="margin-bottom:10px">
+      <div class="form-group"><label>Icona</label><input type="text" id="mm-icon" value="🔬" style="text-align:center;font-size:18px"></div>
+      <div class="form-group"><label>Colore</label><input type="color" id="mm-color" value="#2980b9" style="height:36px;padding:2px"></div>
+      <div class="form-group"><label>Scadenza Cal.</label><input type="date" id="mm-cal-expiry"></div>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label>Lotto Calibrazione</label>
+      <div style="display:flex;gap:6px">
+        <input type="text" id="mm-cal-lot" placeholder="CAL-xxx-2026" style="flex:1">
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('mm-cal-lot').value=autoLotNumber('CAL')">🎲 Auto</button>
+      </div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="confirmMachineModal()">✅ Salva</button>
+      <button class="btn btn-outline" onclick="document.getElementById('machine-modal').classList.add('hidden')">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ MODAL: Add/Edit Test ═══════════ -->
+<div id="test-modal" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:650px">
+    <h3 id="test-modal-title" style="margin-bottom:14px;color:var(--primary)">➕ Nuovo Test</h3>
+    <input type="hidden" id="tm-edit-idx" value="-1">
+    <div class="grid-3" style="margin-bottom:10px">
+      <div class="form-group"><label>ID (codice)</label><input type="text" id="tm-id" placeholder="GLU" style="text-transform:uppercase"></div>
+      <div class="form-group"><label>Nome</label><input type="text" id="tm-name" placeholder="Glucosio"></div>
+      <div class="form-group"><label>Unità</label><input type="text" id="tm-unit" placeholder="mg/dL"></div>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="display:flex;gap:6px;align-items:center;font-size:12px">
+        <input type="checkbox" id="tm-active" checked> Test attivo
+      </label>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:6px">Livelli CQ (Media ± SD)</label>
+      <div id="tm-levels-editor"></div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="confirmTestModal()">✅ Salva</button>
+      <button class="btn btn-outline" onclick="document.getElementById('test-modal').classList.add('hidden')">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ MODAL: Lot Editor ═══════════ -->
+<div id="lot-modal" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:550px">
+    <h3 id="lot-modal-title" style="margin-bottom:14px;color:var(--primary)">📦 Gestione Lotti</h3>
+    <input type="hidden" id="lot-test-idx" value="0">
+    <div id="lot-editor"></div>
+    <div class="btn-group" style="margin-top:14px">
+      <button class="btn btn-primary" onclick="confirmLotModal()">✅ Salva</button>
+      <button class="btn btn-outline" onclick="document.getElementById('lot-modal').classList.add('hidden')">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ MODAL: Batch Generator ═══════════ -->
+<div id="batch-modal" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:600px">
+    <h3 style="margin-bottom:14px;color:var(--primary)">🎲 Generazione Batch CQ</h3>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px">
+      Genera valori CQ casuali realistici (distribuzione gaussiana attorno a media ± SD) per più analizzatori, test e anni.
+    </p>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>Analizzatori</label>
+      <div id="batch-machine-checks" style="max-height:180px;overflow-y:auto;padding:6px;border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;gap:3px;font-size:12px"></div>
+    </div>
+    <div class="grid-2" style="margin-bottom:10px">
+      <div class="form-group"><label>Anno da</label><input type="number" id="batch-year-from" min="2020" max="2040"></div>
+      <div class="form-group"><label>Anno a</label><input type="number" id="batch-year-to" min="2020" max="2040"></div>
+    </div>
+    <div class="grid-2" style="margin-bottom:10px">
+      <div class="form-group"><label>Mese da</label>
+        <select id="batch-month-from">
+          <option value="0">Gennaio</option><option value="1">Febbraio</option><option value="2">Marzo</option><option value="3">Aprile</option>
+          <option value="4">Maggio</option><option value="5">Giugno</option><option value="6">Luglio</option><option value="7">Agosto</option>
+          <option value="8">Settembre</option><option value="9">Ottobre</option><option value="10">Novembre</option><option value="11">Dicembre</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Mese a</label>
+        <select id="batch-month-to">
+          <option value="0">Gennaio</option><option value="1">Febbraio</option><option value="2">Marzo</option><option value="3">Aprile</option>
+          <option value="4">Maggio</option><option value="5">Giugno</option><option value="6">Luglio</option><option value="7">Agosto</option>
+          <option value="8">Settembre</option><option value="9">Ottobre</option><option value="10">Novembre</option><option value="11" selected>Dicembre</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="display:flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="batch-overwrite"> Sovrascrivi esistenti</label>
+    </div>
+    <div id="batch-progress" style="margin-bottom:14px"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="batch-go-btn" onclick="runBatchGeneration()">🚀 Genera</button>
+      <button class="btn btn-outline" onclick="hideBatchModal()">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<!-- JS -->
+<script src="js/state.js"></script>
+<script src="js/navigation.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/data-entry.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/pdf-generator.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/init.js"></script>
+</body>
+</html>
