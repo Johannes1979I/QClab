@@ -108,7 +108,7 @@ function setCalAcq(m){
     if(confirm('Simulare ricezione dati da '+m+' per tutti i test attivi di '+mach.name+'?')){
       mach.tests.filter(t=>t.active).forEach(t=>{
         t.levels.forEach(lv=>{
-          const val=generateRandomQC(lv.mean,lv.sd);
+          const val=generateSafeValue(lv.mean,lv.sd);
           setCalReading(mach.id,t.id,lv.lv,ms,val,m,getOp(),'Auto-'+m,mach.calLot);
         });
       });
@@ -139,7 +139,7 @@ function fillRandomCalAll(){
   const ms=getMonthStr(state.year,state.month);
   active.forEach(t=>{
     t.levels.forEach(lv=>{
-      setCalReading(mach.id,t.id,lv.lv,ms,generateRandomQC(lv.mean,lv.sd),'Generato',getOp(),'',mach.calLot);
+      setCalReading(mach.id,t.id,lv.lv,ms,generateSafeValue(lv.mean,lv.sd),'Generato',getOp(),'',mach.calLot);
     });
   });
   renderCalibrationGrid();
@@ -190,7 +190,7 @@ function runCalBatchGeneration(){
           t.levels.forEach(lv=>{
             const key=calKey(m.id,t.id,lv.lv,monthStr);
             if(!overwrite&&state.calibrations[key]){skip++;return;}
-            const val=generateRandomQC(lv.mean,lv.sd);
+            const val=generateSafeValue(lv.mean,lv.sd);
             const z=Math.abs(val-lv.mean)/lv.sd;
             state.calibrations[key]={value:val,time:'08:00',method:'Batch',operator,notes:'',
               calLot:m.calLot||'',passed:z<=2?'pass':z<=3?'warning':'fail',timestamp:new Date().toISOString()};

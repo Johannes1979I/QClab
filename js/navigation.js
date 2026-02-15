@@ -9,6 +9,6 @@ function showSection(id){
   if(id==='data') renderDataGrid();
   if(id==='calibration') renderCalibrationGrid();
   if(id==='charts') setTimeout(renderAllCharts,100);
-  if(id==='pdf'){renderPdfPreview();renderArchive();}
+  if(id==='pdf'){renderPdfPreview();renderCalPdfPreview();renderArchive();}
   if(id==='settings') renderSettings();
 }

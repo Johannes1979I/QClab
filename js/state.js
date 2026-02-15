@@ -209,6 +209,22 @@ function generateRandomQC(mean, sd) {
   return Math.round((mean+z*sd)*1000)/1000;
 }
 
+/* Generate value guaranteed within ±maxZ SDs (for calibrations: always pass) */
+function generateSafeValue(mean, sd, maxZ) {
+  if(!maxZ) maxZ=1.8;
+  let v, attempts=0;
+  do { v=generateRandomQC(mean,sd); attempts++; } while(Math.abs(v-mean)/sd>maxZ && attempts<50);
+  if(Math.abs(v-mean)/sd>maxZ) v=mean+(Math.random()*2-1)*maxZ*sd;
+  return Math.round(v*1000)/1000;
+}
+
+/* Generate value forced to be altered (warning or reject, |z|>2) */
+function generateAlteredValue(mean, sd) {
+  const sign=Math.random()<0.5?-1:1;
+  const z=2.1+Math.random()*1.4; // z between 2.1 and 3.5
+  return Math.round((mean+sign*z*sd)*1000)/1000;
+}
+
 function newMachineId(){return 'M'+Date.now().toString(36).toUpperCase();}
 
 /* ══════ LOT NUMBER GENERATORS ══════ */

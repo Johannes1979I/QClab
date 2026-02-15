@@ -109,7 +109,11 @@
           <button class="btn btn-sm btn-outline" id="btn-remove-header" style="display:none;margin-top:5px" onclick="removeLogo()">Rimuovi</button>
         </div>
         <div id="lib-status" style="margin-bottom:14px"></div>
-        <button class="btn btn-primary" onclick="generatePDF()">📄 Genera e Scarica PDF</button>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+          <button class="btn btn-primary" onclick="generatePDF()">📄 Report CQ Mensile</button>
+          <button class="btn btn-primary" style="background:var(--warning);border-color:var(--warning)" onclick="generateCalibrationPDF()">📏 Report Calibrazioni</button>
+        </div>
+        <div id="cal-pdf-preview-info" style="margin-bottom:14px"></div>
         <div style="margin-top:20px"><h3 style="font-size:14px;color:var(--primary);margin-bottom:8px">📁 Report Archiviati</h3><div id="archive-list"></div></div>
       </div>
     </div>

@@ -119,7 +119,7 @@ function setAcqM(m){
     if(test&&confirm('Simulare ricezione dati da '+m+' per '+test.name+' (oggi)?')){
       const today=fmtDate(new Date());
       test.levels.forEach(lv=>{
-        const val=generateRandomQC(lv.mean,lv.sd);
+        const val=generateSafeValue(lv.mean,lv.sd);
         setReading(mach.id,test.id,lv.lv,today,val,m,getOp(),'Auto-'+m);
       });
     }
@@ -148,10 +148,16 @@ function fillRandomTest(){
   const test=mach.tests.filter(t=>t.active)[selTestIdx];
   if(!test)return;
   if(!confirm('Generare CQ casuali per "'+test.name+'" — '+MONTH_NAMES[state.month]+' '+state.year+'?'))return;
-  getWorkingDays(state.year,state.month).forEach(d=>{
-    test.levels.forEach(lv=>{
-      setReading(mach.id,test.id,lv.lv,d.date,generateRandomQC(lv.mean,lv.sd),'Generato',getOp(),'');
-    });
+  const wd=getWorkingDays(state.year,state.month);
+  // Build all slots, pick 3-4 to be altered
+  const slots=[];
+  wd.forEach(d=>{test.levels.forEach(lv=>{slots.push({d,lv});});});
+  const numAltered=Math.min(3+Math.floor(Math.random()*2), slots.length); // 3 or 4
+  const alteredSet=new Set();
+  while(alteredSet.size<numAltered && alteredSet.size<slots.length){alteredSet.add(Math.floor(Math.random()*slots.length));}
+  slots.forEach((s,i)=>{
+    const val=alteredSet.has(i)?generateAlteredValue(s.lv.mean,s.lv.sd):generateSafeValue(s.lv.mean,s.lv.sd);
+    setReading(mach.id,test.id,s.lv.lv,s.d.date,val,'Generato',getOp(),'');
   });
   renderDataGrid();
 }
@@ -189,7 +195,7 @@ function runBatchGeneration(){
   const overwrite=document.getElementById('batch-overwrite').checked;
   const operator=getOp()||'Batch';
 
-  // Build task list
+  // Build task list, grouped by machine+month for altered selection
   const tasks=[];
   for(let y=yf;y<=yt;y++){
     const ms=(y===yf)?mf:0, me=(y===yt)?mt:11;
@@ -197,11 +203,19 @@ function runBatchGeneration(){
       const wd=getWorkingDays(y,mo);
       selected.forEach(idx=>{
         const m=state.machines[idx];
+        // Collect all slots for this machine+month
+        const machTasks=[];
         m.tests.filter(t=>t.active).forEach(t=>{
           t.levels.forEach(lv=>{
-            wd.forEach(d=>tasks.push({machId:m.id,testId:t.id,lv:lv.lv,date:d.date,mean:lv.mean,sd:lv.sd}));
+            wd.forEach(d=>machTasks.push({machId:m.id,testId:t.id,lv:lv.lv,date:d.date,mean:lv.mean,sd:lv.sd,altered:false}));
           });
         });
+        // Pick 3-4 random slots to be altered
+        const numAlt=Math.min(3+Math.floor(Math.random()*2),machTasks.length);
+        const altSet=new Set();
+        while(altSet.size<numAlt&&altSet.size<machTasks.length){altSet.add(Math.floor(Math.random()*machTasks.length));}
+        altSet.forEach(i=>{machTasks[i].altered=true;});
+        tasks.push(...machTasks);
       });
     }
   }
@@ -218,7 +232,8 @@ function runBatchGeneration(){
     for(;idx<end;idx++){
       const t=tasks[idx];
       if(!overwrite&&state.readings[rKey(t.machId,t.testId,t.lv,t.date)]){skip++;continue;}
-      state.readings[rKey(t.machId,t.testId,t.lv,t.date)]={value:generateRandomQC(t.mean,t.sd),time:'08:00',method:'Batch',operator,notes:'',timestamp:new Date().toISOString()};
+      const val=t.altered?generateAlteredValue(t.mean,t.sd):generateSafeValue(t.mean,t.sd);
+      state.readings[rKey(t.machId,t.testId,t.lv,t.date)]={value:val,time:'08:00',method:'Batch',operator,notes:'',timestamp:new Date().toISOString()};
       gen++;
     }
     document.getElementById('bbar').style.width=Math.round(idx/total*100)+'%';
