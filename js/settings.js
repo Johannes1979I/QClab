@@ -100,9 +100,11 @@ function confirmMachineModal() {
 function deleteMachine(idx) {
   const m = state.machines[idx];
   if (!confirm('Eliminare "' + m.name + '"?\nTutti i test e dati CQ associati verranno persi.')) return;
-  // Remove readings
+  // Remove readings and calibrations
   const prefix = m.id + '|';
+  const calPrefix = 'CAL|' + m.id + '|';
   Object.keys(state.readings).filter(k => k.startsWith(prefix)).forEach(k => delete state.readings[k]);
+  Object.keys(state.calibrations).filter(k => k.startsWith(calPrefix)).forEach(k => delete state.calibrations[k]);
   state.machines.splice(idx, 1);
   if (settingsMachIdx >= state.machines.length) settingsMachIdx = Math.max(0, state.machines.length - 1);
   saveData();
@@ -174,6 +176,7 @@ function deleteTest(ti) {
   if (!confirm('Eliminare il test "' + t.name + '"? Tutti i dati CQ associati verranno persi.')) return;
   t.levels.forEach(lv => {
     Object.keys(state.readings).filter(k => k.startsWith(m.id + '|' + t.id + '|' + lv.lv + '|')).forEach(k => delete state.readings[k]);
+    Object.keys(state.calibrations).filter(k => k.startsWith('CAL|' + m.id + '|' + t.id + '|' + lv.lv + '|')).forEach(k => delete state.calibrations[k]);
   });
   m.tests.splice(ti, 1);
   saveData(); renderTestManager();
@@ -342,7 +345,7 @@ function loadLogo() {
 
 /* ══════ EXPORT / IMPORT ══════ */
 function exportData() {
-  const data = { machines: state.machines, readings: state.readings, exportDate: new Date().toISOString() };
+  const data = { machines: state.machines, readings: state.readings, calibrations: state.calibrations, exportDate: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url;
@@ -357,6 +360,7 @@ function importData(event) {
       const d = JSON.parse(e.target.result);
       if (d.machines) state.machines = d.machines;
       if (d.readings) Object.assign(state.readings, d.readings);
+      if (d.calibrations) Object.assign(state.calibrations, d.calibrations);
       saveData(); renderSettings(); alert('Importazione riuscita.');
     } catch (err) { alert('Errore: ' + err.message); }
   };
@@ -366,5 +370,6 @@ function clearAllData() {
   if (!confirm('Eliminare TUTTI i dati CQ? Azione irreversibile.')) return;
   if (!confirm('Conferma definitiva?')) return;
   state.readings = {};
+  state.calibrations = {};
   saveData(); showSection('dashboard');
 }

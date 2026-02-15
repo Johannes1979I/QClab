@@ -15,6 +15,11 @@ function renderDashboard(){
     const pct=totalSlots?Math.round(filled/totalSlots*100):0;
     const cardSt=reject>0?'status-alarm':warn>0?'status-warn':filled>0?'status-ok':'status-empty';
 
+    // Calibration status for this machine
+    const calSt=getCalibrationStatus(m.id,state.year,state.month);
+    const calPct=calSt.total?Math.round(calSt.done/calSt.total*100):0;
+    const calColor=calSt.fail>0?'var(--danger)':calSt.warn>0?'var(--warning)':calSt.done===calSt.total&&calSt.total>0?'var(--success)':'var(--text-muted)';
+
     return `<div class="machine-card ${cardSt}" style="--mc:${m.color}">
       <div class="machine-card-header">
         <span class="machine-icon">${m.icon}</span>
@@ -27,11 +32,16 @@ function renderDashboard(){
         <div class="machine-stat"><div class="machine-stat-val">${filled}/${totalSlots}</div><div class="machine-stat-label">CQ</div></div>
         <div class="machine-stat"><div class="machine-stat-val ${reject?'alarm-text':''}">${reject}</div><div class="machine-stat-label">Rigetti</div></div>
       </div>
+      <div class="machine-stats" style="margin-top:4px">
+        <div class="machine-stat"><div class="machine-stat-val" style="color:${calColor}">${calSt.done}/${calSt.total}</div><div class="machine-stat-label">📏 Calibraz.</div></div>
+        <div class="machine-stat"><div class="machine-stat-val" style="color:${calSt.fail?'var(--danger)':'var(--success)'}">${calSt.fail}</div><div class="machine-stat-label">Cal. Fail</div></div>
+        <div class="machine-stat"><div class="machine-stat-val">${calPct}%</div><div class="machine-stat-label">Cal. OK</div></div>
+      </div>
       <div class="machine-lots">
         <span class="lot-tag">Cal: ${m.calLot||'—'}</span>
       </div>
       <div class="fridge-progress"><div class="fridge-progress-bar" style="width:${pct}%;background:${m.color}"></div></div>
-      <div class="fridge-pct">${pct}% completato</div>
+      <div class="fridge-pct">${pct}% CQ completato</div>
     </div>`;
   }).join('');
 }

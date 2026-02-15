@@ -231,3 +231,4 @@ input:focus,select:focus,textarea:focus{border-color:var(--primary);outline:none
   .temp-input{width:60px;font-size:11px;}
   .level-edit-row{flex-direction:column;align-items:stretch;}
 }
+.level-chip-sm{display:inline-block;padding:1px 6px;border-radius:8px;background:var(--primary-pale);font-size:9px;color:var(--primary);font-weight:500;}

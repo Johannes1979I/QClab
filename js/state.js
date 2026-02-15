@@ -7,6 +7,7 @@ const state = {
   year: new Date().getFullYear(),
   machines: [],
   readings: {},  // "MACHINE|TEST|LEVEL|YYYY-MM-DD": {value,time,method,operator,notes,status}
+  calibrations: {} // "CAL|MACHINE|TEST|LEVEL|YYYY-MM": {value,time,method,operator,notes,passed,calLot}
 };
 
 /* ══════ DEFAULT MACHINES & TESTS ══════ */
@@ -164,6 +165,27 @@ function setReading(machId,testId,lv,dateStr,value,method,operator,notes){
 }
 function deleteReading(machId,testId,lv,dateStr){delete state.readings[rKey(machId,testId,lv,dateStr)];saveData();}
 
+/* ══════ CALIBRATION READINGS ══════ */
+function calKey(machId,testId,lv,monthStr){return 'CAL|'+machId+'|'+testId+'|'+lv+'|'+monthStr;}
+function getCalReading(machId,testId,lv,monthStr){return state.calibrations[calKey(machId,testId,lv,monthStr)]||null;}
+function setCalReading(machId,testId,lv,monthStr,value,method,operator,notes,calLot){
+  const mach=state.machines.find(m=>m.id===machId);
+  const test=mach?.tests.find(t=>t.id===testId);
+  const lvDef=test?.levels.find(l=>l.lv===lv);
+  let passed=null;
+  if(lvDef&&value!=null&&!isNaN(value)){
+    const z=Math.abs(value-lvDef.mean)/lvDef.sd;
+    passed=z<=2?'pass':z<=3?'warning':'fail';
+  }
+  state.calibrations[calKey(machId,testId,lv,monthStr)]={value:parseFloat(value),
+    time:new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}),
+    method:method||'Manuale',operator:operator||'',notes:notes||'',
+    calLot:calLot||mach?.calLot||'',passed,timestamp:new Date().toISOString()};
+  saveData();
+}
+function deleteCalReading(machId,testId,lv,monthStr){delete state.calibrations[calKey(machId,testId,lv,monthStr)];saveData();}
+function getMonthStr(y,m){return y+'-'+String(m+1).padStart(2,'0');}
+
 /* ══════ WESTGARD RULES ══════ */
 function evalQC(value, mean, sd) {
   if(value==null||isNaN(value)) return {status:'missing',rule:''};
@@ -174,9 +196,9 @@ function evalQC(value, mean, sd) {
 }
 
 /* ══════ PERSISTENCE ══════ */
-function saveData(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({machines:state.machines,readings:state.readings}));}catch(e){console.warn('Save:',e);}}
+function saveData(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({machines:state.machines,readings:state.readings,calibrations:state.calibrations}));}catch(e){console.warn('Save:',e);}}
 function loadData(){
-  try{const r=localStorage.getItem(STORAGE_KEY);if(r){const d=JSON.parse(r);if(d.machines?.length)state.machines=d.machines;if(d.readings)state.readings=d.readings;}}catch(e){}
+  try{const r=localStorage.getItem(STORAGE_KEY);if(r){const d=JSON.parse(r);if(d.machines?.length)state.machines=d.machines;if(d.readings)state.readings=d.readings;if(d.calibrations)state.calibrations=d.calibrations;}}catch(e){}
   if(!state.machines.length) state.machines=JSON.parse(JSON.stringify(DEFAULT_MACHINES));
 }
 
