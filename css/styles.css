@@ -340,6 +340,8 @@ input:disabled,select:disabled{background:#f3f6fa;color:var(--text-muted);}
   .topbar-right{width:100%;justify-content:center;margin-left:0;}
   .month-selector{width:100%;justify-content:space-between;}
   .chart-grid{grid-template-columns:1fr;}
+  .pill-tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;margin-left:-2px;margin-right:-2px;scrollbar-width:none;}
+  .pill-tab{flex-shrink:0;}
   .card-body{padding:14px 12px;}
   .grid-2,.grid-3{grid-template-columns:1fr;}
   .machine-grid{grid-template-columns:1fr;}
