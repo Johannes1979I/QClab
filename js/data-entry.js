@@ -155,8 +155,8 @@ async function fillRandomTest(){
     state.readings[rKey(mach.id,test.id,s.lv.lv,s.d.date)]={value:val,time:new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}),
       method:'Generato',operator:getOp(),notes:'',timestamp:new Date().toISOString()};
   });
-  saveData();
   renderDataGrid();
+  if(await saveDataNow())uiToast(test.name+': '+slots.length+' valori CQ generati e salvati nel database','ok');
 }
 
 /* ══════ GENERA CQ DI UNO STRUMENTO (tutti gli analiti attivi) — per le prove del software ══════
@@ -214,11 +214,11 @@ async function fillRandomMachine(){
       });
     });
   }
-  const ok=saveData();
+  const ok=await saveDataNow();
   selMachIdx=o.mi;selTestIdx=0;
   renderDataGrid();
-  if(!ok){uiToast('Valori generati ma NON salvati: la memoria del browser è piena. Esporta un backup e riduci il periodo.','err',9000);return;}
-  uiToast(`${mach.name}: ${gen} valori CQ generati per ${tests.length} analiti in ${mesi} ${mesi===1?'mese':'mesi'}`+
+  if(!ok){uiToast('Valori generati ma NON salvati nel database del browser. Esporta un backup.','err',9000);return;}
+  uiToast(`${mach.name}: ${gen} valori CQ generati e salvati nel database per ${tests.length} analiti in ${mesi} ${mesi===1?'mese':'mesi'}`+
     (alt?` (${alt} fuori controllo)`:'')+(skip?`; ${skip} già presenti lasciati com'erano`:''),'ok',7000);
 }
 
@@ -311,13 +311,13 @@ function runBatchGeneration(){
     document.getElementById('bbar').style.width=Math.round(idx/total*100)+'%';
     document.getElementById('bstat').textContent=idx+'/'+total;
     if(idx<total) requestAnimationFrame(chunk);
-    else{
-      const ok=saveData();btn.disabled=false;
+    else (async()=>{
+      const ok=await saveDataNow();btn.disabled=false;
       prog.innerHTML=ok
-        ?`<div class="info-box ok"><strong>${gen} valori CQ generati</strong>${skip?' ('+skip+' già presenti, lasciati com\'erano)':''}</div>`
-        :'<div class="info-box warn">I valori sono stati generati ma NON salvati: la memoria del browser è piena.</div>';
+        ?`<div class="info-box ok"><strong>${gen} valori CQ generati e salvati</strong>${skip?' ('+skip+' già presenti, lasciati com\'erano)':''}</div>`
+        :'<div class="info-box warn">I valori sono stati generati ma NON salvati nel database del browser: esporta un backup.</div>';
       refreshCurrentSection();
-    }
+    })();
   }
   requestAnimationFrame(chunk);
 }

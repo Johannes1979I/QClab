@@ -160,7 +160,7 @@ function renderCalBatchForm(){
   document.getElementById('cal-batch-go-btn').disabled=false;
 }
 
-function runCalBatchGeneration(){
+async function runCalBatchGeneration(){
   const selected=[];document.querySelectorAll('.cal-batch-mch:checked').forEach(c=>selected.push(parseInt(c.value)));
   if(!selected.length){alert('Seleziona almeno un analizzatore.');return;}
   const p=readBatchPeriod('cal-batch-');if(!p)return;
@@ -187,10 +187,10 @@ function runCalBatchGeneration(){
       });
     }
   }
-  const ok=saveData();
+  const ok=await saveDataNow();
   document.getElementById('cal-batch-progress').innerHTML=ok
-    ?`<div class="info-box ok"><strong>${gen} calibrazioni generate</strong>${skip?' ('+skip+' già presenti, lasciate com\'erano)':''}</div>`
-    :'<div class="info-box warn">Le calibrazioni sono state generate ma NON salvate: la memoria del browser è piena.</div>';
+    ?`<div class="info-box ok"><strong>${gen} calibrazioni generate e salvate</strong>${skip?' ('+skip+' già presenti, lasciate com\'erano)':''}</div>`
+    :'<div class="info-box warn">Le calibrazioni sono state generate ma NON salvate nel database del browser: esporta un backup.</div>';
   document.getElementById('cal-batch-go-btn').disabled=false;
   refreshCurrentSection();
 }

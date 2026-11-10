@@ -1,6 +1,6 @@
 /* init.js — avvio */
-function init() {
-  loadData();
+async function init() {
+  await loadData();
   renderMonthSelector();
   loadLogo();
   loadLabName();

@@ -202,13 +202,51 @@ function evalQC(value, mean, sd) {
 }
 
 /* ══════ PERSISTENCE ══════
-   Il salvataggio puo' fallire se la memoria del browser e' piena (i PDF archiviati occupano molto spazio,
-   e QClab e Temp-frigo pubblicati sullo stesso sito la condividono). Prima l'errore finiva solo in console
-   e i dati andavano persi in silenzio: ora si liberano i report archiviati piu' vecchi (si possono
-   rigenerare) e, se non basta, l'utente viene avvisato. */
-let _saveErrNotified=0;
+   Dal 10/11/2026 i dati stanno nel DATABASE del browser (IndexedDB, js/db.js), non piu' in localStorage:
+   localStorage tiene ~5 MB condivisi con Temp-frigo e con i PDF archiviati, e i CQ creati col generatore
+   (manuali e generati vengono salvati allo stesso modo) la riempivano: i dati NON si salvavano.
+   Al primo avvio i dati gia' presenti in localStorage vengono spostati nel database e verificati.
+   Se IndexedDB non c'e' (alcune finestre anonime) si usa localStorage come prima. */
+let _saveErrNotified=0, _dbMode='idb', _dbDirty=false, _dbPending=null;
+function _qcPayload(){return {machines:state.machines,readings:state.readings,calibrations:state.calibrations,savedAt:new Date().toISOString()};}
+
+/* salva subito (in background); per sapere se e' andato a buon fine usare saveDataNow() */
 function saveData(){
   if(typeof qcInvalidate==='function')qcInvalidate();
+  if(_dbMode!=='idb')return saveDataLocal();
+  _dbDirty=true;_dbKick();
+  return true;
+}
+/* come saveData, ma attende la scrittura nel database: Promise<true|false> */
+async function saveDataNow(){
+  if(typeof qcInvalidate==='function')qcInvalidate();
+  if(_dbMode!=='idb')return saveDataLocal();
+  _dbDirty=true;
+  return await _dbKick();
+}
+function _dbKick(){
+  if(_dbPending)return _dbPending;
+  _dbPending=(async()=>{
+    let ok=true;
+    while(_dbDirty){
+      _dbDirty=false;
+      try{await qcDbPut(STORAGE_KEY,_qcPayload());}
+      catch(e){
+        ok=false;console.error('Salvataggio nel database:',e);
+        if(Date.now()-_saveErrNotified>4000){_saveErrNotified=Date.now();
+          uiToast('Dati NON salvati nel database del browser: '+(e&&e.message||e)+'. Esporta subito un backup (Impostazioni → Esporta).','err',12000);}
+      }
+    }
+    _dbPending=null;
+    return ok;
+  })();
+  return _dbPending;
+}
+/* chiudendo la pagina mentre il database sta ancora scrivendo, il browser chiede conferma */
+window.addEventListener('beforeunload',e=>{if(_dbPending||_dbDirty){e.preventDefault();e.returnValue='';}});
+
+/* vecchio salvataggio in localStorage: usato solo se il database del browser non e' disponibile */
+function saveDataLocal(){
   let payload;
   try{payload=JSON.stringify({machines:state.machines,readings:state.readings,calibrations:state.calibrations});}
   catch(e){console.error('Salvataggio:',e);uiToast('Dati NON salvati: '+e.message,'err');return false;}
@@ -239,24 +277,44 @@ function freeArchiveSpace(tentativo){
   }
   return -1;
 }
-function loadData(){
+function _applyData(d){
+  if(!d||typeof d!=='object')return;
+  if(Array.isArray(d.machines)&&d.machines.length)state.machines=d.machines;
+  if(d.readings&&typeof d.readings==='object')state.readings=d.readings;
+  if(d.calibrations&&typeof d.calibrations==='object')state.calibrations=d.calibrations;
+}
+async function loadData(){
+  let d=null;
+  try{d=await qcDbGet(STORAGE_KEY);}
+  catch(e){_dbMode='ls';console.warn('Database del browser non disponibile, uso localStorage:',e);}
+  // dati vecchi in localStorage (prima del 10/11/2026, o se il database non c'e')
   let r=null;
-  try{r=localStorage.getItem(STORAGE_KEY);}catch(e){}
-  if(r){
-    try{
-      const d=JSON.parse(r);
-      if(Array.isArray(d.machines)&&d.machines.length)state.machines=d.machines;
-      if(d.readings&&typeof d.readings==='object')state.readings=d.readings;
-      if(d.calibrations&&typeof d.calibrations==='object')state.calibrations=d.calibrations;
-    }catch(e){
+  if(!d){try{r=localStorage.getItem(STORAGE_KEY);}catch(e){}}
+  if(d)_applyData(d);
+  else if(r){
+    try{_applyData(JSON.parse(r));}
+    catch(e){
       // dati illeggibili: copia di sicurezza prima che un salvataggio li sovrascriva
-      console.error('Dati salvati illeggibili:',e);
-      try{localStorage.setItem(STORAGE_KEY+'_illeggibile_'+localDateStr(),r);}catch(e2){}
+      console.error('Dati salvati illeggibili:',e);r=null;
+      try{localStorage.setItem(STORAGE_KEY+'_illeggibile_'+localDateStr(),localStorage.getItem(STORAGE_KEY));}catch(e2){}
       setTimeout(()=>alert('⚠️ I dati salvati in questo browser non sono leggibili. Ne è stata fatta una copia di sicurezza ('+STORAGE_KEY+'_illeggibile_…): importa un backup JSON se ne hai uno.'),500);
     }
   }
   if(!state.machines.length) state.machines=JSON.parse(JSON.stringify(DEFAULT_MACHINES));
   state.machines.forEach(normalizeMachine);
+  if(_dbMode==='idb'){
+    qcDbPersisti();
+    if(r){
+      // spostamento nel database: localStorage si libera solo dopo aver riletto e confrontato i dati
+      const ok=await saveDataNow();
+      let v=null;try{v=ok?await qcDbGet(STORAGE_KEY):null;}catch(e){}
+      const n=o=>Object.keys((o&&o.readings)||{}).length+Object.keys((o&&o.calibrations)||{}).length;
+      if(v&&n(v)===n(state)&&(v.machines||[]).length===state.machines.length){
+        try{localStorage.removeItem(STORAGE_KEY);}catch(e){}
+        uiToast('Dati spostati nel database del browser: '+Object.keys(state.readings).length+' valori CQ e '+Object.keys(state.calibrations).length+' calibrazioni.','ok',7000);
+      }else console.warn('Spostamento nel database non verificato: i dati restano anche in localStorage');
+    }
+  }
 }
 /* campi mancanti nei dati vecchi o importati: valori di default in lettura (il formato non cambia) */
 function normalizeMachine(m){

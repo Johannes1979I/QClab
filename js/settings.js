@@ -390,7 +390,7 @@ function importData(event) {
     if (okRead) Object.assign(state.readings, d.readings);
     if (okCal) Object.assign(state.calibrations, d.calibrations);
     settingsMachIdx = 0;
-    if (saveData()) alert('✅ Importazione riuscita: ' + nR + ' valori CQ, ' + nC + ' calibrazioni.');
+    if (await saveDataNow()) alert('✅ Importazione riuscita: ' + nR + ' valori CQ, ' + nC + ' calibrazioni (salvati nel database del browser).');
     refreshCurrentSection();
   };
   reader.readAsText(file); event.target.value = '';
