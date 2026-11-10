@@ -1,60 +1,53 @@
-/* data-entry.js — QC Data Entry Grid + Batch Generator */
+/* data-entry.js — griglia di inserimento CQ + generazione batch */
 
 let selMachIdx=0, selTestIdx=0, currentAcqMethod='Manuale';
 
+function machineTabsHtml(sel,onclickFn){
+  return '<div class="pill-tabs">'+state.machines.map((m,i)=>
+    `<button class="pill-tab ${i===sel?'active':''}" style="--fc:${safeColor(m.color)}" onclick="${onclickFn}(${i})"><span class="dot" style="background:${safeColor(m.color)}"></span>${escHtml(m.name)}</button>`
+  ).join('')+'</div>';
+}
+function selectDataMachine(i){selMachIdx=i;selTestIdx=0;renderDataGrid();}
+function selectDataTest(i){selTestIdx=i;renderDataGrid();}
+
 function renderDataGrid(){
   const c=document.getElementById('data-grid-container');if(!c)return;
-  if(!state.machines.length){c.innerHTML='<p style="text-align:center;color:var(--text-muted);padding:20px">Nessun analizzatore configurato.</p>';return;}
+  if(!state.machines.length){c.innerHTML='<div class="empty-msg">Nessun analizzatore configurato.</div>';return;}
   if(selMachIdx>=state.machines.length)selMachIdx=0;
   const mach=state.machines[selMachIdx];
   const activeTests=mach.tests.filter(t=>t.active);
   if(selTestIdx>=activeTests.length)selTestIdx=0;
   const wd=getWorkingDays(state.year,state.month);
 
-  // Machine tabs
-  let h='<div class="fridge-tabs">';
-  state.machines.forEach((m,i)=>{
-    h+=`<button class="fridge-tab ${i===selMachIdx?'active':''}" style="--fc:${m.color}" onclick="selMachIdx=${i};selTestIdx=0;renderDataGrid()">${m.icon} ${m.name}</button>`;
-  });
-  h+='</div>';
+  let h=machineTabsHtml(selMachIdx,'selectDataMachine');
+  if(!activeTests.length){c.innerHTML=h+'<div class="empty-msg">Nessun test attivo per '+escHtml(mach.name)+'. Attivali in Impostazioni.</div>';return;}
 
-  if(!activeTests.length){c.innerHTML=h+'<p style="text-align:center;color:var(--text-muted);padding:20px">Nessun test attivo per '+mach.name+'. Vai in Impostazioni per attivarli.</p>';return;}
-
-  // Test sub-tabs
-  h+='<div class="test-tabs">';
-  activeTests.forEach((t,i)=>{
-    h+=`<button class="test-tab ${i===selTestIdx?'active':''}" onclick="selTestIdx=${i};renderDataGrid()">${t.name}</button>`;
-  });
-  h+='</div>';
+  h+='<div class="test-tabs">'+activeTests.map((t,i)=>
+    `<button class="test-tab ${i===selTestIdx?'active':''}" onclick="selectDataTest(${i})">${escHtml(t.name)}</button>`).join('')+'</div>';
 
   const test=activeTests[selTestIdx];
+  const mId=escJs(mach.id),tId=escJs(test.id);
 
-  // Acq bar + lot info
   h+=`<div class="acq-bar">
     <span class="acq-label">Acquisizione:</span>
-    <button class="btn btn-sm btn-outline acq-btn${currentAcqMethod==='Manuale'?' active':''}" onclick="setAcqM('Manuale')">✏️ Manuale</button>
-    <button class="btn btn-sm btn-outline acq-btn${currentAcqMethod==='Strumento'?' active':''}" onclick="setAcqM('Strumento')">🖥️ Strumento</button>
-    <button class="btn btn-sm btn-outline acq-btn${currentAcqMethod==='DB'?' active':''}" onclick="setAcqM('DB')">🗄️ DB</button>
-    <div style="flex:1"></div>
-    <button class="btn btn-sm btn-primary" onclick="fillRandomTest()">🎲 Genera CQ</button>
-    <button class="btn btn-sm btn-outline" onclick="clearTestMonth()">🗑 Cancella mese</button>
+    <button class="btn btn-sm btn-outline acq-btn${currentAcqMethod==='Manuale'?' active':''}" onclick="setAcqM('Manuale')"><i data-lucide="pencil"></i>Manuale</button>
+    <button class="btn btn-sm btn-outline acq-btn${currentAcqMethod==='Strumento'?' active':''}" onclick="setAcqM('Strumento')"><i data-lucide="monitor"></i>Strumento</button>
+    <button class="btn btn-sm btn-outline acq-btn${currentAcqMethod==='DB'?' active':''}" onclick="setAcqM('DB')"><i data-lucide="database"></i>DB</button>
+    <div class="acq-spacer"></div>
+    <button class="btn btn-sm btn-outline" onclick="fillRandomTest()"><i data-lucide="dices"></i>Genera CQ</button>
+    <button class="btn-danger-outline" onclick="clearTestMonth()"><i data-lucide="trash-2"></i>Cancella mese</button>
   </div>`;
 
-  // Operator + Cal lot
   h+=`<div class="operator-row">
-    <label>Operatore:</label><input type="text" id="operator-name" value="${getOp()}" onchange="setOp(this.value)" placeholder="Nome" style="max-width:180px">
-    <label style="margin-left:16px">Lotto Cal:</label><span class="lot-display">${mach.calLot||'—'}</span>
+    <label for="operator-name">Operatore:</label><input type="text" id="operator-name" value="${escHtml(getOp())}" onchange="setOp(this.value)" placeholder="Nome">
+    <label style="margin-left:10px">Lotto cal.:</label><span class="lot-display">${escHtml(mach.calLot||'—')}</span>
   </div>`;
 
-  // Info bar
-  h+=`<div style="margin-bottom:8px;font-size:13px;color:var(--text-secondary)">
-    <strong style="color:${mach.color}">${mach.name}</strong> — <strong>${test.name}</strong> (${test.unit})
-    — ${test.levels.length} livelli CQ
-  </div>`;
+  h+=`<div class="grid-info"><strong style="color:${safeColor(mach.color)}">${escHtml(mach.name)}</strong> — <strong>${escHtml(test.name)}</strong> (${escHtml(test.unit)}) — ${test.levels.length} livelli CQ</div>`;
 
-  // Table: days × levels
+  // tabella: giorni × livelli
   h+='<div class="data-table-wrap"><table class="temp-table"><thead><tr><th>Giorno</th><th>Data</th>';
-  test.levels.forEach(lv=>{h+=`<th style="min-width:100px">${lv.name}<br><small>${lv.mean}±${lv.sd}</small><br><small class="lot-mini">Lotto: ${lv.lot}</small></th>`;});
+  test.levels.forEach(lv=>{h+=`<th style="min-width:104px">${escHtml(lv.name)}<br><small>${escHtml(lv.mean)} ± ${escHtml(lv.sd)}</small><br><small class="lot-mini">Lotto: ${escHtml(lv.lot)}</small></th>`;});
   h+='<th>Stato</th><th>Note</th></tr></thead><tbody>';
 
   const dn=['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
@@ -62,61 +55,51 @@ function renderDataGrid(){
 
   wd.forEach(d=>{
     const isToday=d.date===todayStr;
-    // Determine worst status across levels for this day
-    let worstStatus='missing', anyFilled=false;
-    test.levels.forEach(lv=>{
-      const r=getReading(mach.id,test.id,lv.lv,d.date);
-      if(r){
-        anyFilled=true;
-        const ev=evalQC(r.value,lv.mean,lv.sd);
-        if(ev.status==='reject') worstStatus='reject';
-        else if(ev.status==='warning'&&worstStatus!=='reject') worstStatus='warning';
-        else if(ev.status==='pass'&&worstStatus==='missing') worstStatus='pass';
-      }
-    });
+    // stato peggiore fra i livelli del giorno (con le regole di Westgard)
+    const evs=test.levels.map(lv=>evalQCMulti(mach.id,test,lv,d.date));
+    let worst={status:'missing',rule:''};
+    const rejects=evs.filter(e=>e.status==='reject');
+    if(rejects.length)worst={status:'reject',rule:[...new Set(rejects.flatMap(e=>e.rules))].join(' ')};
+    else if(evs.some(e=>e.status==='warning'))worst={status:'warning',rule:'1-2s'};
+    else if(evs.some(e=>e.status==='pass'))worst={status:'pass',rule:''};
+    const anyFilled=evs.some(e=>e.status!=='missing');
 
-    const rowClass=worstStatus==='reject'?'alarm':worstStatus==='warning'?'warning':anyFilled?'ok':'missing';
+    const rowClass=worst.status==='reject'?'alarm':worst.status==='warning'?'warning':anyFilled?'ok':'missing';
     h+=`<tr class="temp-row ${rowClass}${isToday?' today-row':''}">`;
     h+=`<td class="day-name">${dn[d.dow]}</td><td class="day-date">${d.dayNum}/${state.month+1}</td>`;
 
-    test.levels.forEach(lv=>{
+    test.levels.forEach((lv,li)=>{
       const r=getReading(mach.id,test.id,lv.lv,d.date);
-      const val=r?r.value:'';
-      let cellClass='';
-      if(r){const ev=evalQC(r.value,lv.mean,lv.sd);cellClass=ev.status==='reject'?'cell-reject':ev.status==='warning'?'cell-warn':'cell-pass';}
-      h+=`<td class="${cellClass}"><input type="number" step="any" class="temp-input" value="${val!==''?val:''}"
-        onchange="onQCInput('${mach.id}','${test.id}',${lv.lv},'${d.date}',this.value)" onfocus="this.select()"></td>`;
+      const ev=evs[li];
+      const cellClass=ev.status==='reject'?'cell-reject':ev.status==='warning'?'cell-warn':ev.status==='pass'?'cell-pass':'';
+      const tip=r?`title="${escHtml((r.method||'')+(r.operator?' — '+r.operator:'')+(r.time?' — '+r.time:'')+(ev.rule?' — '+ev.rule:''))}"`:'';
+      h+=`<td class="${cellClass}"><input type="number" step="any" class="temp-input" value="${r&&r.value!=null&&!isNaN(r.value)?r.value:''}" ${tip}
+        onchange="onQCInput('${mId}','${tId}',${lv.lv},'${d.date}',this.value)" onfocus="this.select()" aria-label="${escHtml(lv.name)} ${d.dayNum}/${state.month+1}"></td>`;
     });
 
-    // Status badge
-    const stMap={pass:'<span class="status-badge st-ok">PASS</span>',warning:'<span class="status-badge st-warn">⚠️ 1-2s</span>',reject:'<span class="status-badge st-alarm">✖ 1-3s</span>',missing:'<span class="status-badge st-miss">—</span>'};
-    h+=`<td>${stMap[worstStatus]}</td>`;
-
-    // Notes (from first level reading)
-    const r0=getReading(mach.id,test.id,test.levels[0].lv,d.date);
-    h+=`<td><input type="text" class="note-input" value="${r0?.notes||''}" placeholder="..."
-      onchange="onQCNote('${mach.id}','${test.id}','${d.date}',this.value)"></td>`;
+    h+=`<td>${qcBadge(worst)}</td>`;
+    const r0=test.levels.length?getReading(mach.id,test.id,test.levels[0].lv,d.date):null;
+    const noteAny=r0?.notes||test.levels.map(lv=>getReading(mach.id,test.id,lv.lv,d.date)?.notes).find(x=>x)||'';
+    h+=`<td><input type="text" class="note-input" value="${escHtml(noteAny)}" placeholder="…"
+      onchange="onQCNote('${mId}','${tId}','${d.date}',this.value)"></td>`;
     h+='</tr>';
   });
   h+='</tbody></table></div>';
 
-  // Summary
+  // riepilogo del mese
   let tp=0,tw=0,tr=0,tm=0;
-  wd.forEach(d=>{test.levels.forEach(lv=>{
-    const r=getReading(mach.id,test.id,lv.lv,d.date);
-    if(!r)tm++;else{const e=evalQC(r.value,lv.mean,lv.sd);if(e.status==='pass')tp++;else if(e.status==='warning')tw++;else tr++;}
-  });});
-  h+=`<div class="summary-bar"><span class="sum-ok">${tp} Pass</span><span class="sum-warn">${tw} Warning (1-2s)</span><span class="sum-alarm">${tr} Reject (1-3s)</span><span class="sum-miss">${tm} Mancanti</span></div>`;
+  test.levels.forEach(lv=>{const t=qcTally(mach.id,test,lv,wd);tp+=t.pass;tw+=t.warn;tr+=t.reject;tm+=t.missing;});
+  h+=`<div class="summary-bar"><span class="sum-ok">${tp} conformi</span><span class="sum-warn">${tw} avvisi 1-2s</span><span class="sum-alarm">${tr} rigetti</span><span class="sum-miss">${tm} mancanti</span></div>`;
 
   c.innerHTML=h;
 }
 
-function setAcqM(m){
+async function setAcqM(m){
   currentAcqMethod=m;
   if(m==='Strumento'||m==='DB'){
     const mach=state.machines[selMachIdx];
-    const test=mach.tests.filter(t=>t.active)[selTestIdx];
-    if(test&&confirm('Simulare ricezione dati da '+m+' per '+test.name+' (oggi)?')){
+    const test=mach&&mach.tests.filter(t=>t.active)[selTestIdx];
+    if(test&&await uiConfirm('Simulare la ricezione dei dati da '+m+' per '+test.name+' (oggi)?\nI valori vengono generati a caso: non sono misure reali.',{title:'Simulazione',danger:false})){
       const today=fmtDate(new Date());
       test.levels.forEach(lv=>{
         const val=generateSafeValue(lv.mean,lv.sd);
@@ -131,8 +114,17 @@ function getOp(){try{return localStorage.getItem('qclab_operator')||'';}catch(e)
 function setOp(v){try{localStorage.setItem('qclab_operator',v);}catch(e){}}
 
 function onQCInput(machId,testId,lv,dateStr,val){
-  if(val===''||isNaN(parseFloat(val)))return;
-  setReading(machId,testId,lv,dateStr,val,currentAcqMethod,getOp(),'');
+  const s=String(val==null?'':val).trim();
+  if(s===''){
+    // campo svuotato = valore cancellato (prima restava salvato e non si poteva togliere)
+    if(getReading(machId,testId,lv,dateStr)){deleteReading(machId,testId,lv,dateStr);uiToast('Valore cancellato','info');}
+    renderDataGrid();return;
+  }
+  const n=parseFloat(s.replace(',','.'));
+  if(!isFinite(n)){uiToast('Valore non valido: '+s,'err');renderDataGrid();return;}
+  // la nota del giorno resta anche quando si corregge il valore
+  const old=getReading(machId,testId,lv,dateStr);
+  setReading(machId,testId,lv,dateStr,n,currentAcqMethod,getOp(),old?.notes||'');
   renderDataGrid();
 }
 
@@ -140,44 +132,56 @@ function onQCNote(machId,testId,dateStr,val){
   const mach=state.machines.find(m=>m.id===machId);
   const test=mach?.tests.find(t=>t.id===testId);
   if(!test)return;
-  test.levels.forEach(lv=>{const r=getReading(machId,testId,lv.lv,dateStr);if(r){r.notes=val;saveData();}});
+  let n=0;
+  test.levels.forEach(lv=>{const r=getReading(machId,testId,lv.lv,dateStr);if(r){r.notes=val;n++;}});
+  if(n)saveData();
+  else uiToast('Inserisci prima almeno un valore del giorno: la nota si salva insieme ai valori.','warn');
 }
 
-function fillRandomTest(){
+async function fillRandomTest(){
   const mach=state.machines[selMachIdx];
-  const test=mach.tests.filter(t=>t.active)[selTestIdx];
+  const test=mach&&mach.tests.filter(t=>t.active)[selTestIdx];
   if(!test)return;
-  if(!confirm('Generare CQ casuali per "'+test.name+'" — '+MONTH_NAMES[state.month]+' '+state.year+'?'))return;
+  if(!await uiConfirm('Generare valori CQ casuali per «'+test.name+'» — '+MONTH_NAMES[state.month]+' '+state.year+'?\nI valori già inseriti nel mese verranno sovrascritti.',{title:'Genera CQ'}))return;
   const wd=getWorkingDays(state.year,state.month);
-  // Build all slots, pick 3-4 to be altered
   const slots=[];
   wd.forEach(d=>{test.levels.forEach(lv=>{slots.push({d,lv});});});
-  const numAltered=Math.min(3+Math.floor(Math.random()*2), slots.length); // 3 or 4
+  const numAltered=Math.min(3+Math.floor(Math.random()*2), slots.length); // 3 o 4
   const alteredSet=new Set();
   while(alteredSet.size<numAltered && alteredSet.size<slots.length){alteredSet.add(Math.floor(Math.random()*slots.length));}
   slots.forEach((s,i)=>{
     const val=alteredSet.has(i)?generateAlteredValue(s.lv.mean,s.lv.sd):generateSafeValue(s.lv.mean,s.lv.sd);
-    setReading(mach.id,test.id,s.lv.lv,s.d.date,val,'Generato',getOp(),'');
+    state.readings[rKey(mach.id,test.id,s.lv.lv,s.d.date)]={value:val,time:new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}),
+      method:'Generato',operator:getOp(),notes:'',timestamp:new Date().toISOString()};
   });
+  saveData();
   renderDataGrid();
 }
 
-function clearTestMonth(){
+async function clearTestMonth(){
   const mach=state.machines[selMachIdx];
-  const test=mach.tests.filter(t=>t.active)[selTestIdx];
-  if(!test||!confirm('Cancellare i dati CQ di '+test.name+' per '+MONTH_NAMES[state.month]+'?'))return;
-  getWorkingDays(state.year,state.month).forEach(d=>{test.levels.forEach(lv=>deleteReading(mach.id,test.id,lv.lv,d.date));});
+  const test=mach&&mach.tests.filter(t=>t.active)[selTestIdx];
+  if(!test||!await uiConfirm('Cancellare i dati CQ di '+test.name+' per '+MONTH_NAMES[state.month]+' '+state.year+'?'))return;
+  getWorkingDays(state.year,state.month).forEach(d=>{test.levels.forEach(lv=>{delete state.readings[rKey(mach.id,test.id,lv.lv,d.date)];});});
+  saveData();
   renderDataGrid();
 }
 
-/* ══════ BATCH GENERATOR ══════ */
-function showBatchModal(){document.getElementById('batch-modal').classList.remove('hidden');renderBatchForm();}
+/* ══════ GENERAZIONE BATCH ══════ */
+function fillMonthSelects(){
+  document.querySelectorAll('select.month-select').forEach(s=>{
+    if(s.options.length)return;
+    s.innerHTML=MONTH_NAMES.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
+    s.value=s.dataset.default||'0';
+  });
+}
+function showBatchModal(){fillMonthSelects();document.getElementById('batch-modal').classList.remove('hidden');renderBatchForm();}
 function hideBatchModal(){document.getElementById('batch-modal').classList.add('hidden');}
 
 function renderBatchForm(){
   const c=document.getElementById('batch-machine-checks');
-  c.innerHTML='<label style="display:flex;gap:6px;align-items:center;margin-bottom:6px;font-weight:600"><input type="checkbox" id="batch-all" onchange="document.querySelectorAll(\'.batch-mch\').forEach(c=>c.checked=this.checked)" checked> Tutti gli analizzatori</label>'+
-    state.machines.map((m,i)=>`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" class="batch-mch" value="${i}" checked> <span style="color:${m.color}">●</span> ${m.name} (${m.tests.filter(t=>t.active).length} test attivi)</label>`).join('');
+  c.innerHTML='<label style="font-weight:600"><input type="checkbox" id="batch-all" onchange="document.querySelectorAll(\'.batch-mch\').forEach(c=>c.checked=this.checked)" checked> Tutti gli analizzatori</label>'+
+    state.machines.map((m,i)=>`<label><input type="checkbox" class="batch-mch" value="${i}" checked> <span class="dot" style="background:${safeColor(m.color)}"></span> ${escHtml(m.name)} (${m.tests.filter(t=>t.active).length} test attivi)</label>`).join('');
   const cy=new Date().getFullYear();
   document.getElementById('batch-year-from').value=cy;
   document.getElementById('batch-year-to').value=cy;
@@ -185,32 +189,35 @@ function renderBatchForm(){
   document.getElementById('batch-go-btn').disabled=false;
 }
 
+function readBatchPeriod(prefix){
+  const yf=parseInt(document.getElementById(prefix+'year-from').value),yt=parseInt(document.getElementById(prefix+'year-to').value);
+  const mf=parseInt(document.getElementById(prefix+'month-from').value),mt=parseInt(document.getElementById(prefix+'month-to').value);
+  if(isNaN(yf)||isNaN(yt)||yf>yt){alert('Intervallo di anni non valido.');return null;}
+  if(yt-yf>10){alert('Massimo 10 anni per volta.');return null;}
+  if(yf===yt&&mf>mt){alert('Il mese iniziale viene dopo il mese finale.');return null;}
+  return {yf,yt,mf,mt};
+}
+
 function runBatchGeneration(){
   const selected=[];document.querySelectorAll('.batch-mch:checked').forEach(c=>selected.push(parseInt(c.value)));
-  if(!selected.length){alert('Selezionare almeno un analizzatore.');return;}
-  const yf=parseInt(document.getElementById('batch-year-from').value),yt=parseInt(document.getElementById('batch-year-to').value);
-  if(isNaN(yf)||isNaN(yt)||yf>yt){alert('Intervallo anni non valido.');return;}
-  if(yt-yf>10){alert('Massimo 10 anni.');return;}
-  const mf=parseInt(document.getElementById('batch-month-from').value),mt=parseInt(document.getElementById('batch-month-to').value);
+  if(!selected.length){alert('Seleziona almeno un analizzatore.');return;}
+  const p=readBatchPeriod('batch-');if(!p)return;
   const overwrite=document.getElementById('batch-overwrite').checked;
   const operator=getOp()||'Batch';
 
-  // Build task list, grouped by machine+month for altered selection
   const tasks=[];
-  for(let y=yf;y<=yt;y++){
-    const ms=(y===yf)?mf:0, me=(y===yt)?mt:11;
+  for(let y=p.yf;y<=p.yt;y++){
+    const ms=(y===p.yf)?p.mf:0, me=(y===p.yt)?p.mt:11;
     for(let mo=ms;mo<=me;mo++){
       const wd=getWorkingDays(y,mo);
       selected.forEach(idx=>{
-        const m=state.machines[idx];
-        // Collect all slots for this machine+month
+        const m=state.machines[idx];if(!m)return;
         const machTasks=[];
         m.tests.filter(t=>t.active).forEach(t=>{
           t.levels.forEach(lv=>{
             wd.forEach(d=>machTasks.push({machId:m.id,testId:t.id,lv:lv.lv,date:d.date,mean:lv.mean,sd:lv.sd,altered:false}));
           });
         });
-        // Pick 3-4 random slots to be altered
         const numAlt=Math.min(3+Math.floor(Math.random()*2),machTasks.length);
         const altSet=new Set();
         while(altSet.size<numAlt&&altSet.size<machTasks.length){altSet.add(Math.floor(Math.random()*machTasks.length));}
@@ -221,6 +228,7 @@ function runBatchGeneration(){
   }
 
   const total=tasks.length;
+  if(!total){alert('Nessun test attivo negli analizzatori scelti.');return;}
   const prog=document.getElementById('batch-progress');
   const btn=document.getElementById('batch-go-btn');
   btn.disabled=true;
@@ -239,7 +247,13 @@ function runBatchGeneration(){
     document.getElementById('bbar').style.width=Math.round(idx/total*100)+'%';
     document.getElementById('bstat').textContent=idx+'/'+total;
     if(idx<total) requestAnimationFrame(chunk);
-    else{saveData();btn.disabled=false;prog.innerHTML=`<div style="padding:12px;background:var(--success-pale);border-radius:8px;color:var(--success);font-weight:600">✅ ${gen} valori CQ generati${skip?' ('+skip+' saltati)':''}</div>`;}
+    else{
+      const ok=saveData();btn.disabled=false;
+      prog.innerHTML=ok
+        ?`<div class="info-box ok"><strong>${gen} valori CQ generati</strong>${skip?' ('+skip+' già presenti, lasciati com\'erano)':''}</div>`
+        :'<div class="info-box warn">I valori sono stati generati ma NON salvati: la memoria del browser è piena.</div>';
+      refreshCurrentSection();
+    }
   }
   requestAnimationFrame(chunk);
 }

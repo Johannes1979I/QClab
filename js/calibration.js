@@ -1,115 +1,100 @@
-/* calibration.js — Calibration Data Entry: 1×/month per test, same pattern as QC */
+/* calibration.js — calibrazioni: una lettura al mese per test e livello */
 
 let calMachIdx=0, calTestIdx=0, calAcqMethod='Manuale';
 
+function selectCalMachine(i){calMachIdx=i;calTestIdx=0;renderCalibrationGrid();}
+
+function calBadge(passed){
+  if(passed==='pass')return '<span class="status-badge st-ok">PASS</span>';
+  if(passed==='warning')return '<span class="status-badge st-warn">⚠ 2-3 DS</span>';
+  if(passed==='fail')return '<span class="status-badge st-alarm">✖ FAIL</span>';
+  return '<span class="status-badge st-miss">—</span>';
+}
+
 function renderCalibrationGrid(){
   const c=document.getElementById('cal-grid-container');if(!c)return;
-  if(!state.machines.length){c.innerHTML='<p style="text-align:center;color:var(--text-muted);padding:20px">Nessun analizzatore configurato.</p>';return;}
+  if(!state.machines.length){c.innerHTML='<div class="empty-msg">Nessun analizzatore configurato.</div>';return;}
   if(calMachIdx>=state.machines.length)calMachIdx=0;
   const mach=state.machines[calMachIdx];
   const activeTests=mach.tests.filter(t=>t.active);
-  if(calTestIdx>=activeTests.length)calTestIdx=0;
 
-  // Machine tabs
-  let h='<div class="fridge-tabs">';
-  state.machines.forEach((m,i)=>{
-    h+=`<button class="fridge-tab ${i===calMachIdx?'active':''}" style="--fc:${m.color}" onclick="calMachIdx=${i};calTestIdx=0;renderCalibrationGrid()">${m.icon} ${m.name}</button>`;
-  });
-  h+='</div>';
+  let h=machineTabsHtml(calMachIdx,'selectCalMachine');
+  if(!activeTests.length){c.innerHTML=h+'<div class="empty-msg">Nessun test attivo per '+escHtml(mach.name)+'. Attivali in Impostazioni.</div>';return;}
 
-  if(!activeTests.length){c.innerHTML=h+'<p style="text-align:center;color:var(--text-muted);padding:20px">Nessun test attivo per '+mach.name+'. Vai in Impostazioni per attivarli.</p>';return;}
-
-  // Acq bar
   h+=`<div class="acq-bar">
     <span class="acq-label">Acquisizione:</span>
-    <button class="btn btn-sm btn-outline acq-btn${calAcqMethod==='Manuale'?' active':''}" onclick="setCalAcq('Manuale')">✏️ Manuale</button>
-    <button class="btn btn-sm btn-outline acq-btn${calAcqMethod==='Strumento'?' active':''}" onclick="setCalAcq('Strumento')">🖥️ Strumento</button>
-    <button class="btn btn-sm btn-outline acq-btn${calAcqMethod==='DB'?' active':''}" onclick="setCalAcq('DB')">🗄️ DB</button>
-    <div style="flex:1"></div>
-    <button class="btn btn-sm btn-primary" onclick="fillRandomCalAll()">🎲 Genera Calibrazioni</button>
-    <button class="btn btn-sm btn-outline" onclick="clearCalMonth()">🗑 Cancella mese</button>
+    <button class="btn btn-sm btn-outline acq-btn${calAcqMethod==='Manuale'?' active':''}" onclick="setCalAcq('Manuale')"><i data-lucide="pencil"></i>Manuale</button>
+    <button class="btn btn-sm btn-outline acq-btn${calAcqMethod==='Strumento'?' active':''}" onclick="setCalAcq('Strumento')"><i data-lucide="monitor"></i>Strumento</button>
+    <button class="btn btn-sm btn-outline acq-btn${calAcqMethod==='DB'?' active':''}" onclick="setCalAcq('DB')"><i data-lucide="database"></i>DB</button>
+    <div class="acq-spacer"></div>
+    <button class="btn btn-sm btn-outline" onclick="fillRandomCalAll()"><i data-lucide="dices"></i>Genera calibrazioni</button>
+    <button class="btn-danger-outline" onclick="clearCalMonth()"><i data-lucide="trash-2"></i>Cancella mese</button>
   </div>`;
 
-  // Operator + Cal lot
   h+=`<div class="operator-row">
-    <label>Operatore:</label><input type="text" id="cal-operator-name" value="${getOp()}" onchange="setOp(this.value)" placeholder="Nome" style="max-width:180px">
-    <label style="margin-left:16px">Lotto Cal:</label><span class="lot-display">${mach.calLot||'—'}</span>
-    <label style="margin-left:16px">Scadenza:</label><span class="lot-display">${mach.calExpiry||'—'}</span>
+    <label for="cal-operator-name">Operatore:</label><input type="text" id="cal-operator-name" value="${escHtml(getOp())}" onchange="setOp(this.value)" placeholder="Nome">
+    <label style="margin-left:10px">Lotto cal.:</label><span class="lot-display">${escHtml(mach.calLot||'—')}</span>
+    <label style="margin-left:10px">Scadenza:</label><span class="lot-display">${escHtml(mach.calExpiry?fmtDateIt(mach.calExpiry):'—')}</span>
   </div>`;
 
-  // Info
   const ms=getMonthStr(state.year,state.month);
-  h+=`<div style="margin-bottom:6px;padding:8px 12px;background:var(--accent-pale);border-radius:8px;font-size:12px">
-    <strong>📏 Calibrazione mensile</strong> — ${MONTH_NAMES[state.month]} ${state.year}
-    <span style="color:var(--text-muted);margin-left:8px">Una sola lettura per test/livello al mese. I valori devono rientrare entro ±2SD dalla media del calibratore.</span>
-  </div>`;
+  h+=`<div class="info-box"><strong>Calibrazione mensile — ${MONTH_NAMES[state.month]} ${state.year}.</strong>
+    Una sola lettura per test e livello al mese. PASS entro ±2 DS dalla media del calibratore, avviso fra 2 e 3 DS, FAIL oltre 3 DS.</div>`;
 
-  // Table: ALL active tests × levels for this month
   h+='<div class="data-table-wrap"><table class="temp-table"><thead><tr>';
-  h+='<th style="min-width:140px">Test</th><th>Unità</th><th>Livello</th><th>Media (target)</th><th>±SD</th><th>Lotto CQ</th>';
-  h+='<th style="min-width:120px">Valore misurato</th><th>Stato</th><th>Metodo</th><th>Note</th>';
+  h+='<th style="min-width:130px">Test</th><th>Unità</th><th>Livello</th><th>Media (target)</th><th>± DS</th><th>Lotto CQ</th>';
+  h+='<th style="min-width:110px">Valore misurato</th><th>Stato</th><th>Metodo</th><th>Note</th>';
   h+='</tr></thead><tbody>';
 
+  const mId=escJs(mach.id);
   activeTests.forEach(test=>{
+    const tId=escJs(test.id);
     test.levels.forEach((lv,li)=>{
       const r=getCalReading(mach.id,test.id,lv.lv,ms);
-      const val=r?r.value:'';
-      let cellClass='',statusBadge='<span class="status-badge st-miss">—</span>';
-      if(r){
-        if(r.passed==='pass'){cellClass='cell-pass';statusBadge='<span class="status-badge st-ok">✅ PASS</span>';}
-        else if(r.passed==='warning'){cellClass='cell-warn';statusBadge='<span class="status-badge st-warn">⚠️ 2-3SD</span>';}
-        else{cellClass='cell-reject';statusBadge='<span class="status-badge st-alarm">✖ FAIL</span>';}
-      }
+      let cellClass='';
+      if(r){cellClass=r.passed==='pass'?'cell-pass':r.passed==='warning'?'cell-warn':'cell-reject';}
       const rowClass=r?(r.passed==='pass'?'ok':r.passed==='warning'?'warning':'alarm'):'missing';
       h+=`<tr class="temp-row ${rowClass}">`;
-      // Test name (only on first level)
-      if(li===0) h+=`<td rowspan="${test.levels.length}" style="font-weight:600;border-right:2px solid var(--border)">${test.name}</td>`;
-      if(li===0) h+=`<td rowspan="${test.levels.length}" style="border-right:1px solid var(--border-light)">${test.unit}</td>`;
-      if(li!==0){/* rowspan handles it */}
-      h+=`<td style="font-size:11px"><span class="level-chip-sm">${lv.name}</span></td>`;
-      h+=`<td style="text-align:center;font-weight:600">${lv.mean}</td>`;
-      h+=`<td style="text-align:center">±${lv.sd}</td>`;
-      h+=`<td style="font-size:10px;color:var(--text-muted)">${lv.lot}</td>`;
-      h+=`<td class="${cellClass}"><input type="number" step="any" class="temp-input" value="${val!==''?val:''}"
-        onchange="onCalInput('${mach.id}','${test.id}',${lv.lv},'${ms}',this.value)" onfocus="this.select()"></td>`;
-      h+=`<td>${statusBadge}</td>`;
-      h+=`<td style="font-size:10px">${r?r.method:'—'}</td>`;
-      h+=`<td><input type="text" class="note-input" value="${r?.notes||''}" placeholder="..."
-        onchange="onCalNote('${mach.id}','${test.id}',${lv.lv},'${ms}',this.value)"></td>`;
+      if(li===0){
+        h+=`<td rowspan="${test.levels.length}" style="font-weight:600;text-align:left;border-right:1px solid var(--border)">${escHtml(test.name)}</td>`;
+        h+=`<td rowspan="${test.levels.length}" style="border-right:1px solid var(--border-light)">${escHtml(test.unit)}</td>`;
+      }
+      h+=`<td><span class="level-chip-sm">${escHtml(lv.name)}</span></td>`;
+      h+=`<td style="font-weight:600">${escHtml(lv.mean)}</td>`;
+      h+=`<td>±${escHtml(lv.sd)}</td>`;
+      h+=`<td style="font-size:11px;color:var(--text-muted)">${escHtml(lv.lot)}</td>`;
+      h+=`<td class="${cellClass}"><input type="number" step="any" class="temp-input" value="${r&&r.value!=null&&!isNaN(r.value)?r.value:''}"
+        onchange="onCalInput('${mId}','${tId}',${lv.lv},'${ms}',this.value)" onfocus="this.select()" aria-label="${escHtml(test.name+' '+lv.name)}"></td>`;
+      h+=`<td>${r?calBadge(r.passed):calBadge(null)}</td>`;
+      h+=`<td class="method-cell">${escHtml(r?r.method:'—')}</td>`;
+      h+=`<td><input type="text" class="note-input" value="${escHtml(r?.notes||'')}" placeholder="…"
+        onchange="onCalNote('${mId}','${tId}',${lv.lv},'${ms}',this.value)"></td>`;
       h+='</tr>';
     });
   });
   h+='</tbody></table></div>';
 
-  // Summary
-  let tp=0,tw=0,tf=0,tm=0;
-  activeTests.forEach(t=>{t.levels.forEach(lv=>{
-    const r=getCalReading(mach.id,t.id,lv.lv,ms);
-    if(!r)tm++;else if(r.passed==='pass')tp++;else if(r.passed==='warning')tw++;else tf++;
-  });});
-  const total=tp+tw+tf+tm;
+  const st=getCalibrationStatus(mach.id,state.year,state.month);
   h+=`<div class="summary-bar">
-    <span class="sum-ok">${tp} Pass</span>
-    <span class="sum-warn">${tw} Warning</span>
-    <span class="sum-alarm">${tf} Fail</span>
-    <span class="sum-miss">${tm} Mancanti</span>
-    <span style="margin-left:auto;font-weight:600;color:${tf>0?'var(--danger)':tm>0?'var(--text-muted)':'var(--success)'}">${total?Math.round(tp/total*100):0}% conforme</span>
+    <span class="sum-ok">${st.pass} PASS</span>
+    <span class="sum-warn">${st.warn} avvisi</span>
+    <span class="sum-alarm">${st.fail} FAIL</span>
+    <span class="sum-miss">${st.missing} mancanti</span>
+    <span style="margin-left:auto;color:${st.fail>0?'var(--danger)':st.missing>0?'var(--text-muted)':'var(--success)'}">${st.total?Math.round(st.pass/st.total*100):0}% conforme</span>
   </div>`;
 
   c.innerHTML=h;
 }
 
-/* ── Acquisition methods ── */
-function setCalAcq(m){
+async function setCalAcq(m){
   calAcqMethod=m;
   if(m==='Strumento'||m==='DB'){
     const mach=state.machines[calMachIdx];
     const ms=getMonthStr(state.year,state.month);
-    if(confirm('Simulare ricezione dati da '+m+' per tutti i test attivi di '+mach.name+'?')){
+    if(mach&&await uiConfirm('Simulare la ricezione da '+m+' per tutti i test attivi di '+mach.name+'?\nI valori vengono generati a caso: non sono misure reali.',{title:'Simulazione',danger:false})){
       mach.tests.filter(t=>t.active).forEach(t=>{
         t.levels.forEach(lv=>{
-          const val=generateSafeValue(lv.mean,lv.sd);
-          setCalReading(mach.id,t.id,lv.lv,ms,val,m,getOp(),'Auto-'+m,mach.calLot);
+          setCalReading(mach.id,t.id,lv.lv,ms,generateSafeValue(lv.mean,lv.sd),m,getOp(),'Auto-'+m,mach.calLot);
         });
       });
     }
@@ -117,25 +102,31 @@ function setCalAcq(m){
   renderCalibrationGrid();
 }
 
-/* ── Manual input ── */
 function onCalInput(machId,testId,lv,ms,val){
-  if(val===''||isNaN(parseFloat(val)))return;
+  const s=String(val==null?'':val).trim();
+  if(s===''){
+    if(getCalReading(machId,testId,lv,ms)){deleteCalReading(machId,testId,lv,ms);uiToast('Valore cancellato','info');}
+    renderCalibrationGrid();return;
+  }
+  const n=parseFloat(s.replace(',','.'));
+  if(!isFinite(n)){uiToast('Valore non valido: '+s,'err');renderCalibrationGrid();return;}
   const mach=state.machines.find(m=>m.id===machId);
-  setCalReading(machId,testId,lv,ms,val,calAcqMethod,getOp(),'',mach?.calLot||'');
+  const old=getCalReading(machId,testId,lv,ms);
+  setCalReading(machId,testId,lv,ms,n,calAcqMethod,getOp(),old?.notes||'',mach?.calLot||'');
   renderCalibrationGrid();
 }
 
 function onCalNote(machId,testId,lv,ms,val){
   const r=getCalReading(machId,testId,lv,ms);
   if(r){r.notes=val;saveData();}
+  else uiToast('Inserisci prima il valore: la nota si salva insieme alla misura.','warn');
 }
 
-/* ── Random generation: all tests for current machine & month ── */
-function fillRandomCalAll(){
+async function fillRandomCalAll(){
   const mach=state.machines[calMachIdx];
-  const active=mach.tests.filter(t=>t.active);
+  const active=mach?mach.tests.filter(t=>t.active):[];
   if(!active.length)return;
-  if(!confirm('Generare calibrazioni casuali per tutti i '+active.length+' test attivi di "'+mach.name+'" — '+MONTH_NAMES[state.month]+' '+state.year+'?'))return;
+  if(!await uiConfirm('Generare calibrazioni casuali per tutti i '+active.length+' test attivi di «'+mach.name+'» — '+MONTH_NAMES[state.month]+' '+state.year+'?\nI valori già inseriti nel mese verranno sovrascritti.',{title:'Genera calibrazioni'}))return;
   const ms=getMonthStr(state.year,state.month);
   active.forEach(t=>{
     t.levels.forEach(lv=>{
@@ -145,23 +136,23 @@ function fillRandomCalAll(){
   renderCalibrationGrid();
 }
 
-/* ── Clear month ── */
-function clearCalMonth(){
-  const mach=state.machines[calMachIdx];
+async function clearCalMonth(){
+  const mach=state.machines[calMachIdx];if(!mach)return;
   const ms=getMonthStr(state.year,state.month);
-  if(!confirm('Cancellare tutte le calibrazioni di '+mach.name+' per '+MONTH_NAMES[state.month]+' '+state.year+'?'))return;
-  mach.tests.filter(t=>t.active).forEach(t=>{t.levels.forEach(lv=>deleteCalReading(mach.id,t.id,lv.lv,ms));});
+  if(!await uiConfirm('Cancellare tutte le calibrazioni di '+mach.name+' per '+MONTH_NAMES[state.month]+' '+state.year+'?'))return;
+  mach.tests.filter(t=>t.active).forEach(t=>{t.levels.forEach(lv=>{delete state.calibrations[calKey(mach.id,t.id,lv.lv,ms)];});});
+  saveData();
   renderCalibrationGrid();
 }
 
-/* ══════ BATCH CALIBRATION GENERATOR ══════ */
-function showCalBatchModal(){document.getElementById('cal-batch-modal').classList.remove('hidden');renderCalBatchForm();}
+/* ══════ GENERAZIONE BATCH CALIBRAZIONI ══════ */
+function showCalBatchModal(){fillMonthSelects();document.getElementById('cal-batch-modal').classList.remove('hidden');renderCalBatchForm();}
 function hideCalBatchModal(){document.getElementById('cal-batch-modal').classList.add('hidden');}
 
 function renderCalBatchForm(){
   const c=document.getElementById('cal-batch-machine-checks');
-  c.innerHTML='<label style="display:flex;gap:6px;align-items:center;margin-bottom:6px;font-weight:600"><input type="checkbox" id="cal-batch-all" onchange="document.querySelectorAll(\'.cal-batch-mch\').forEach(c=>c.checked=this.checked)" checked> Tutti gli analizzatori</label>'+
-    state.machines.map((m,i)=>`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" class="cal-batch-mch" value="${i}" checked> <span style="color:${m.color}">●</span> ${m.name} (${m.tests.filter(t=>t.active).length} test attivi)</label>`).join('');
+  c.innerHTML='<label style="font-weight:600"><input type="checkbox" id="cal-batch-all" onchange="document.querySelectorAll(\'.cal-batch-mch\').forEach(c=>c.checked=this.checked)" checked> Tutti gli analizzatori</label>'+
+    state.machines.map((m,i)=>`<label><input type="checkbox" class="cal-batch-mch" value="${i}" checked> <span class="dot" style="background:${safeColor(m.color)}"></span> ${escHtml(m.name)} (${m.tests.filter(t=>t.active).length} test attivi)</label>`).join('');
   const cy=new Date().getFullYear();
   document.getElementById('cal-batch-year-from').value=cy;
   document.getElementById('cal-batch-year-to').value=cy;
@@ -171,47 +162,45 @@ function renderCalBatchForm(){
 
 function runCalBatchGeneration(){
   const selected=[];document.querySelectorAll('.cal-batch-mch:checked').forEach(c=>selected.push(parseInt(c.value)));
-  if(!selected.length){alert('Selezionare almeno un analizzatore.');return;}
-  const yf=parseInt(document.getElementById('cal-batch-year-from').value),yt=parseInt(document.getElementById('cal-batch-year-to').value);
-  if(isNaN(yf)||isNaN(yt)||yf>yt){alert('Intervallo anni non valido.');return;}
-  if(yt-yf>10){alert('Massimo 10 anni.');return;}
-  const mf=parseInt(document.getElementById('cal-batch-month-from').value),mt=parseInt(document.getElementById('cal-batch-month-to').value);
+  if(!selected.length){alert('Seleziona almeno un analizzatore.');return;}
+  const p=readBatchPeriod('cal-batch-');if(!p)return;
   const overwrite=document.getElementById('cal-batch-overwrite').checked;
   const operator=getOp()||'Batch';
 
   let gen=0,skip=0;
-  for(let y=yf;y<=yt;y++){
-    const ms=(y===yf)?mf:0, me=(y===yt)?mt:11;
+  for(let y=p.yf;y<=p.yt;y++){
+    const ms=(y===p.yf)?p.mf:0, me=(y===p.yt)?p.mt:11;
     for(let mo=ms;mo<=me;mo++){
       const monthStr=getMonthStr(y,mo);
       selected.forEach(idx=>{
-        const m=state.machines[idx];
+        const m=state.machines[idx];if(!m)return;
         m.tests.filter(t=>t.active).forEach(t=>{
           t.levels.forEach(lv=>{
             const key=calKey(m.id,t.id,lv.lv,monthStr);
             if(!overwrite&&state.calibrations[key]){skip++;return;}
             const val=generateSafeValue(lv.mean,lv.sd);
-            const z=Math.abs(val-lv.mean)/lv.sd;
             state.calibrations[key]={value:val,time:'08:00',method:'Batch',operator,notes:'',
-              calLot:m.calLot||'',passed:z<=2?'pass':z<=3?'warning':'fail',timestamp:new Date().toISOString()};
+              calLot:m.calLot||'',passed:calOutcome(val,lv.mean,lv.sd),timestamp:new Date().toISOString()};
             gen++;
           });
         });
       });
     }
   }
-  saveData();
-  document.getElementById('cal-batch-progress').innerHTML=`<div style="padding:12px;background:var(--success-pale);border-radius:8px;color:var(--success);font-weight:600">✅ ${gen} calibrazioni generate${skip?' ('+skip+' saltate)':''}</div>`;
+  const ok=saveData();
+  document.getElementById('cal-batch-progress').innerHTML=ok
+    ?`<div class="info-box ok"><strong>${gen} calibrazioni generate</strong>${skip?' ('+skip+' già presenti, lasciate com\'erano)':''}</div>`
+    :'<div class="info-box warn">Le calibrazioni sono state generate ma NON salvate: la memoria del browser è piena.</div>';
   document.getElementById('cal-batch-go-btn').disabled=false;
+  refreshCurrentSection();
 }
 
-/* ══════ CALIBRATION STATUS for DASHBOARD ══════ */
+/* ══════ STATO CALIBRAZIONI per DASHBOARD e PDF ══════ */
 function getCalibrationStatus(machId,year,month){
   const ms=getMonthStr(year,month);
   const mach=state.machines.find(m=>m.id===machId);if(!mach)return{total:0,done:0,pass:0,warn:0,fail:0,missing:0};
-  const active=mach.tests.filter(t=>t.active);
   let total=0,done=0,pass=0,warn=0,fail=0;
-  active.forEach(t=>{t.levels.forEach(lv=>{
+  mach.tests.filter(t=>t.active).forEach(t=>{t.levels.forEach(lv=>{
     total++;
     const r=getCalReading(machId,t.id,lv.lv,ms);
     if(r){done++;if(r.passed==='pass')pass++;else if(r.passed==='warning')warn++;else fail++;}

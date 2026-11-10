@@ -161,50 +161,113 @@ function getReading(machId,testId,lv,dateStr){return state.readings[rKey(machId,
 function setReading(machId,testId,lv,dateStr,value,method,operator,notes){
   state.readings[rKey(machId,testId,lv,dateStr)]={value:parseFloat(value),time:new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}),
     method:method||'Manuale',operator:operator||'',notes:notes||'',timestamp:new Date().toISOString()};
-  saveData();
+  return saveData();
 }
 function deleteReading(machId,testId,lv,dateStr){delete state.readings[rKey(machId,testId,lv,dateStr)];saveData();}
 
 /* ══════ CALIBRATION READINGS ══════ */
 function calKey(machId,testId,lv,monthStr){return 'CAL|'+machId+'|'+testId+'|'+lv+'|'+monthStr;}
 function getCalReading(machId,testId,lv,monthStr){return state.calibrations[calKey(machId,testId,lv,monthStr)]||null;}
+/* esito calibrazione: entro ±2DS = pass, fra 2 e 3 DS = warning, oltre 3 DS = fail */
+function calOutcome(value,mean,sd){
+  const z=qcZ(value,mean,sd);
+  if(z==null)return null;
+  const az=Math.abs(z);
+  return az<=2?'pass':az<=3?'warning':'fail';
+}
 function setCalReading(machId,testId,lv,monthStr,value,method,operator,notes,calLot){
   const mach=state.machines.find(m=>m.id===machId);
   const test=mach?.tests.find(t=>t.id===testId);
   const lvDef=test?.levels.find(l=>l.lv===lv);
-  let passed=null;
-  if(lvDef&&value!=null&&!isNaN(value)){
-    const z=Math.abs(value-lvDef.mean)/lvDef.sd;
-    passed=z<=2?'pass':z<=3?'warning':'fail';
-  }
+  const passed=lvDef?calOutcome(value,lvDef.mean,lvDef.sd):null;
   state.calibrations[calKey(machId,testId,lv,monthStr)]={value:parseFloat(value),
     time:new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}),
     method:method||'Manuale',operator:operator||'',notes:notes||'',
     calLot:calLot||mach?.calLot||'',passed,timestamp:new Date().toISOString()};
-  saveData();
+  return saveData();
 }
 function deleteCalReading(machId,testId,lv,monthStr){delete state.calibrations[calKey(machId,testId,lv,monthStr)];saveData();}
 function getMonthStr(y,m){return y+'-'+String(m+1).padStart(2,'0');}
 
-/* ══════ WESTGARD RULES ══════ */
+/* ══════ WESTGARD: singolo valore (1-2s / 1-3s) ══════
+   Le regole su piu' valori (2-2s, R-4s, 4-1s, 10x) sono in westgard.js (evalQCMulti). */
 function evalQC(value, mean, sd) {
-  if(value==null||isNaN(value)) return {status:'missing',rule:''};
-  const z = Math.abs(value - mean) / sd;
-  if(z > 3)  return {status:'reject', rule:'1-3s'};
-  if(z > 2)  return {status:'warning',rule:'1-2s'};
+  if(value==null||value===''||isNaN(value)) return {status:'missing',rule:''};
+  const z=qcZ(value,mean,sd);
+  if(z==null) return {status:'warning',rule:'DS non valida'};
+  const az=Math.abs(z);
+  if(az > 3)  return {status:'reject', rule:'1-3s'};
+  if(az > 2)  return {status:'warning',rule:'1-2s'};
   return {status:'pass',rule:''};
 }
 
-/* ══════ PERSISTENCE ══════ */
-function saveData(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({machines:state.machines,readings:state.readings,calibrations:state.calibrations}));}catch(e){console.warn('Save:',e);}}
+/* ══════ PERSISTENCE ══════
+   Il salvataggio puo' fallire se la memoria del browser e' piena (i PDF archiviati occupano molto spazio,
+   e QClab e Temp-frigo pubblicati sullo stesso sito la condividono). Prima l'errore finiva solo in console
+   e i dati andavano persi in silenzio: ora si liberano i report archiviati piu' vecchi (si possono
+   rigenerare) e, se non basta, l'utente viene avvisato. */
+let _saveErrNotified=0;
+function saveData(){
+  if(typeof qcInvalidate==='function')qcInvalidate();
+  let payload;
+  try{payload=JSON.stringify({machines:state.machines,readings:state.readings,calibrations:state.calibrations});}
+  catch(e){console.error('Salvataggio:',e);uiToast('Dati NON salvati: '+e.message,'err');return false;}
+  try{localStorage.setItem(STORAGE_KEY,payload);return true;}
+  catch(e){
+    const liberati=freeArchiveSpace(()=>localStorage.setItem(STORAGE_KEY,payload));
+    if(liberati>=0){
+      uiToast('Memoria del browser quasi piena: eliminati '+liberati+' report PDF archiviati (i più vecchi) per salvare i dati. Esporta un backup.','warn',9000);
+      return true;
+    }
+    console.error('Salvataggio:',e);
+    if(Date.now()-_saveErrNotified>4000){
+      _saveErrNotified=Date.now();
+      alert('❌ Dati NON salvati: la memoria del browser è piena.\nEsporta subito un backup (Impostazioni → Esporta) e libera spazio.');
+    }
+    return false;
+  }
+}
+/* toglie i report archiviati piu' vecchi finche' tentativo() riesce: ritorna quanti ne ha tolti, -1 se non basta */
+function freeArchiveSpace(tentativo){
+  let ar;try{ar=JSON.parse(localStorage.getItem('qclab_archive')||'[]');}catch(e){return -1;}
+  if(!Array.isArray(ar)||!ar.length)return -1;
+  let tolti=0;
+  while(ar.length){
+    ar.pop();tolti++;
+    try{if(ar.length)localStorage.setItem('qclab_archive',JSON.stringify(ar));else localStorage.removeItem('qclab_archive');}catch(e){continue;}
+    try{tentativo();return tolti;}catch(e){}
+  }
+  return -1;
+}
 function loadData(){
-  try{const r=localStorage.getItem(STORAGE_KEY);if(r){const d=JSON.parse(r);if(d.machines?.length)state.machines=d.machines;if(d.readings)state.readings=d.readings;if(d.calibrations)state.calibrations=d.calibrations;}}catch(e){}
+  let r=null;
+  try{r=localStorage.getItem(STORAGE_KEY);}catch(e){}
+  if(r){
+    try{
+      const d=JSON.parse(r);
+      if(Array.isArray(d.machines)&&d.machines.length)state.machines=d.machines;
+      if(d.readings&&typeof d.readings==='object')state.readings=d.readings;
+      if(d.calibrations&&typeof d.calibrations==='object')state.calibrations=d.calibrations;
+    }catch(e){
+      // dati illeggibili: copia di sicurezza prima che un salvataggio li sovrascriva
+      console.error('Dati salvati illeggibili:',e);
+      try{localStorage.setItem(STORAGE_KEY+'_illeggibile_'+localDateStr(),r);}catch(e2){}
+      setTimeout(()=>alert('⚠️ I dati salvati in questo browser non sono leggibili. Ne è stata fatta una copia di sicurezza ('+STORAGE_KEY+'_illeggibile_…): importa un backup JSON se ne hai uno.'),500);
+    }
+  }
   if(!state.machines.length) state.machines=JSON.parse(JSON.stringify(DEFAULT_MACHINES));
+  state.machines.forEach(normalizeMachine);
+}
+/* campi mancanti nei dati vecchi o importati: valori di default in lettura (il formato non cambia) */
+function normalizeMachine(m){
+  if(!m||typeof m!=='object')return;
+  if(!Array.isArray(m.tests))m.tests=[];
+  m.tests.forEach(t=>{if(!Array.isArray(t.levels))t.levels=[];});
 }
 
 /* ══════ RANDOM QC GENERATOR ══════ */
 function generateRandomQC(mean, sd) {
-  const u1=Math.random(),u2=Math.random();
+  const u1=1-Math.random(),u2=Math.random(); // 1-random: mai log(0)
   const z=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);
   return Math.round((mean+z*sd)*1000)/1000;
 }
@@ -225,7 +288,12 @@ function generateAlteredValue(mean, sd) {
   return Math.round((mean+sign*z*sd)*1000)/1000;
 }
 
-function newMachineId(){return 'M'+Date.now().toString(36).toUpperCase();}
+function newMachineId(){
+  let id;
+  do{id='M'+Date.now().toString(36).toUpperCase()+Math.floor(Math.random()*1296).toString(36).toUpperCase();}
+  while(state.machines.some(m=>m.id===id));
+  return id;
+}
 
 /* ══════ LOT NUMBER GENERATORS ══════ */
 function autoLotNumber(prefix){return (prefix||'LOT')+'-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*9000)+1000);}
