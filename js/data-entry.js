@@ -34,7 +34,8 @@ function renderDataGrid(){
     <button class="btn btn-sm btn-outline acq-btn${currentAcqMethod==='Strumento'?' active':''}" onclick="setAcqM('Strumento')"><i data-lucide="monitor"></i>Strumento</button>
     <button class="btn btn-sm btn-outline acq-btn${currentAcqMethod==='DB'?' active':''}" onclick="setAcqM('DB')"><i data-lucide="database"></i>DB</button>
     <div class="acq-spacer"></div>
-    <button class="btn btn-sm btn-outline" onclick="fillRandomTest()"><i data-lucide="dices"></i>Genera CQ</button>
+    <button class="btn btn-sm btn-outline" onclick="fillRandomTest()" title="Genera i CQ del solo analita aperto, per il mese visualizzato"><i data-lucide="dices"></i>Genera CQ</button>
+    <button class="btn btn-sm btn-primary" onclick="fillRandomMachine()" title="Genera i CQ di TUTTI gli analiti attivi dello strumento scelto (prove del software)"><i data-lucide="layers"></i>Genera CQ strumento</button>
     <button class="btn-danger-outline" onclick="clearTestMonth()"><i data-lucide="trash-2"></i>Cancella mese</button>
   </div>`;
 
@@ -156,6 +157,69 @@ async function fillRandomTest(){
   });
   saveData();
   renderDataGrid();
+}
+
+/* ══════ GENERA CQ DI UNO STRUMENTO (tutti gli analiti attivi) — per le prove del software ══════
+   Si sceglie lo strumento (es. Vitros 350) e il periodo: per ogni analita attivo e ogni livello CQ si crea un valore in
+   ogni giorno lavorativo. Facoltativo: 3-4 valori fuori controllo per analita e mese, per vedere scattare le regole di
+   Westgard. I valori sono segnati con metodo «Generato». */
+async function fillRandomMachine(){
+  if(!state.machines.length)return;
+  const opzMesi=sel=>MONTH_NAMES.map((n,i)=>`<option value="${i}"${i===sel?' selected':''}>${n}</option>`).join('');
+  const html=`<div class="gen-form" style="text-align:left;display:grid;gap:12px;font-size:13px">
+    <label style="display:grid;gap:4px"><span style="font-weight:600">Strumento</span>
+      <select id="gm-mach" class="swal2-select" style="margin:0;width:100%;font-size:13px">${state.machines.map((m,i)=>
+        `<option value="${i}"${i===selMachIdx?' selected':''}>${escHtml(m.name)} — ${m.tests.filter(t=>t.active).length} analiti attivi</option>`).join('')}</select></label>
+    <div style="display:grid;gap:4px"><span style="font-weight:600">Periodo</span>
+      <div style="display:grid;grid-template-columns:24px 1fr 90px;gap:6px 8px;align-items:center">
+        <span>Da</span><select id="gm-mf" class="swal2-select" style="margin:0;font-size:13px;width:100%;min-width:0">${opzMesi(state.month)}</select>
+        <input id="gm-yf" type="number" class="swal2-input" style="margin:0;width:100%;font-size:13px" value="${state.year}" aria-label="Anno iniziale">
+        <span>A</span><select id="gm-mt" class="swal2-select" style="margin:0;font-size:13px;width:100%;min-width:0">${opzMesi(state.month)}</select>
+        <input id="gm-yt" type="number" class="swal2-input" style="margin:0;width:100%;font-size:13px" value="${state.year}" aria-label="Anno finale"></div>
+      <small style="color:#6f7b92">Di partenza: il mese che stai guardando. Solo giorni lavorativi, come nell'inserimento.</small></div>
+    <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="gm-alt" checked style="margin-top:3px">
+      <span>Inserisci 3-4 valori <strong>fuori controllo</strong> per analita e mese (per provare le regole di Westgard)</span></label>
+    <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="gm-over" checked style="margin-top:3px">
+      <span>Sovrascrivi i valori già inseriti (se togli la spunta, i giorni già compilati restano com'erano)</span></label>
+    <div style="background:#fff4dc;color:#7a5600;border-radius:9px;padding:8px 10px;font-size:12px">Valori generati a caso per le prove: non sono misure reali e restano segnati come «Generato».</div>
+  </div>`;
+  const r=await Swal.fire({title:'Genera CQ di tutti gli analiti',html,width:600,showCancelButton:true,
+    confirmButtonText:'Genera',cancelButtonText:'Annulla',focusConfirm:false,returnFocus:false,
+    preConfirm:()=>{
+      const v=id=>document.getElementById(id);
+      const o={mi:parseInt(v('gm-mach').value),mf:parseInt(v('gm-mf').value),yf:parseInt(v('gm-yf').value),
+        mt:parseInt(v('gm-mt').value),yt:parseInt(v('gm-yt').value),alt:v('gm-alt').checked,over:v('gm-over').checked};
+      if(!state.machines[o.mi]){Swal.showValidationMessage('Scegli uno strumento');return false;}
+      if(!state.machines[o.mi].tests.some(t=>t.active)){Swal.showValidationMessage('Lo strumento non ha analiti attivi (si attivano in Impostazioni)');return false;}
+      if(!(o.yf>=2000&&o.yt<=2100)||o.yf*12+o.mf>o.yt*12+o.mt){Swal.showValidationMessage('Periodo non valido: la fine viene prima dell\'inizio');return false;}
+      if((o.yt*12+o.mt)-(o.yf*12+o.mf)>=36){Swal.showValidationMessage('Massimo 36 mesi per volta');return false;}
+      return o;
+    }});
+  if(!r.isConfirmed||!r.value)return;
+  const o=r.value, mach=state.machines[o.mi], tests=mach.tests.filter(t=>t.active), operator=getOp()||'Generatore';
+  let gen=0,skip=0,alt=0,mesi=0;
+  for(let k=o.yf*12+o.mf;k<=o.yt*12+o.mt;k++){
+    const y=Math.floor(k/12),mo=k%12,wd=getWorkingDays(y,mo);mesi++;
+    tests.forEach(t=>{
+      const slots=[];wd.forEach(d=>t.levels.forEach(lv=>slots.push({d,lv})));
+      const altSet=new Set();
+      if(o.alt&&slots.length){const n=Math.min(3+Math.floor(Math.random()*2),slots.length);while(altSet.size<n)altSet.add(Math.floor(Math.random()*slots.length));}
+      slots.forEach((s,i)=>{
+        const key=rKey(mach.id,t.id,s.lv.lv,s.d.date);
+        if(!o.over&&state.readings[key]){skip++;return;}
+        const fuori=altSet.has(i);
+        state.readings[key]={value:fuori?generateAlteredValue(s.lv.mean,s.lv.sd):generateSafeValue(s.lv.mean,s.lv.sd),
+          time:'08:00',method:'Generato',operator,notes:'',timestamp:new Date().toISOString()};
+        gen++;if(fuori)alt++;
+      });
+    });
+  }
+  const ok=saveData();
+  selMachIdx=o.mi;selTestIdx=0;
+  renderDataGrid();
+  if(!ok){uiToast('Valori generati ma NON salvati: la memoria del browser è piena. Esporta un backup e riduci il periodo.','err',9000);return;}
+  uiToast(`${mach.name}: ${gen} valori CQ generati per ${tests.length} analiti in ${mesi} ${mesi===1?'mese':'mesi'}`+
+    (alt?` (${alt} fuori controllo)`:'')+(skip?`; ${skip} già presenti lasciati com'erano`:''),'ok',7000);
 }
 
 async function clearTestMonth(){
